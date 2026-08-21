@@ -1,0 +1,6 @@
+# Python
+__pycache__/
+*.pyc
+
+# 使用者個人筆記內容（資料，不是程式碼；notes-editor 預設會讀取此資料夾）
+notes-editor/notes/

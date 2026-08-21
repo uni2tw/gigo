@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>本機知識筆記</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <span>筆記</span>
+        <span id="sidebar-actions">
+          <button id="btn-new-folder" title="新增資料夾">📁+</button>
+          <button id="btn-new-note" title="新增筆記">📄+</button>
+        </span>
+      </div>
+      <div id="tree-root"></div>
+    </aside>
+    <main id="editor-pane">
+      <div id="editor-empty">請從左側選擇一篇筆記，或使用上方按鈕新增</div>
+      <div id="editor-content" hidden>
+        <div id="editor-toolbar">
+          <h1 id="note-title"></h1>
+          <button id="btn-toggle-source" title="切換為原始 Markdown 檢視/編輯">檢視原始碼</button>
+        </div>
+        <div id="save-status"></div>
+        <div id="block-editor"></div>
+        <textarea id="source-editor" hidden spellcheck="false"></textarea>
+      </div>
+    </main>
+  </div>
+  <script src="{{ url_for('static', filename='js/modal.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/markdown.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/tree.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
