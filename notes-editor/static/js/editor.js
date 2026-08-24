@@ -262,7 +262,9 @@ window.NotesEditor = (function () {
 
     row.appendChild(formatMenu);
     row.appendChild(toggle);
-    row.appendChild(marker);
+    if (marker) {
+      row.appendChild(marker);
+    }
     row.appendChild(text);
     group.appendChild(row);
 
@@ -291,15 +293,17 @@ window.NotesEditor = (function () {
       return checkbox;
     }
 
+    if (block.type !== 'list_item' && block.type !== 'ordered_item') {
+      return null;
+    }
+
     var marker = document.createElement('span');
     marker.className = 'block-bullet';
     if (block.type === 'list_item') {
       marker.textContent = '•';
-    } else if (block.type === 'ordered_item') {
+    } else {
       marker.className += ' block-bullet-ordered';
       marker.textContent = orderedIndex + '.';
-    } else {
-      marker.textContent = '';
     }
     return marker;
   }

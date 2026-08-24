@@ -173,3 +173,9 @@
 - [x] 25.1 Enter 處理最前面加入攔截：目前區塊文字已清空且型態屬於 `CONTINUABLE_TYPES` 時，直接將該區塊 `type` 改為 `paragraph`（無標記），焦點留在原區塊，不建立新區塊
 - [x] 25.2 `insertSiblingAfter` 於「非延續」情境下新建區塊的預設型態，由 `list_item` 改為 `paragraph`，避免轉換後的空段落再按 Enter 又生出新 bullet
 - [x] 25.3 以隔離測試伺服器＋真實鍵盤事件驗證：非空清單項目按 Enter 延續型態（行為不變）→ 空清單項目再按 Enter 轉為無標記段落、不新增區塊 → 空段落再按 Enter 才新增新的空段落
+
+## 26. 修正標題／段落區塊看起來像多一個 tab
+
+- [x] 26.1 `renderMarker` 對非 `list_item`／`ordered_item` 型態回傳 `null`，不再回傳空文字的 `.block-bullet`
+- [x] 26.2 `renderBlock` 只在 `renderMarker` 有回傳值時才附加該元素，讓沒有標記的區塊不佔用清單標記欄位的版面空間
+- [x] 26.3 以使用者真實筆記複本＋隔離測試伺服器驗證：標題文字左邊界較清單文字少 22px（原清單標記欄位寬度）
