@@ -32,9 +32,12 @@ html, body {
   border-right: 1px solid var(--sidebar-border);
   overflow-y: auto;
   padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 #sidebar-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -44,6 +47,10 @@ html, body {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+#tree-root {
+  flex: 1;
 }
 
 #sidebar-actions button {
@@ -123,15 +130,103 @@ html, body {
   font-size: 1rem;
 }
 
-.tree-node-count {
+.tree-node-trailing {
+  position: relative;
   flex-shrink: 0;
   margin-left: 6px;
+  width: 22px;
+  height: 22px;
+}
+
+.tree-node-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
   padding: 0 6px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--accent-color);
   background: var(--highlight-bg);
+  white-space: nowrap;
+}
+
+.tree-node-row:hover .tree-node-count {
+  display: none;
+}
+
+.tree-action-menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.tree-action-trigger {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--muted-color);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.tree-node-row:hover .tree-action-trigger,
+.tree-action-trigger:focus {
+  opacity: 1;
+}
+
+.tree-action-trigger:hover {
+  background: #e2e2e2;
+}
+
+.tree-action-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 128px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+}
+
+.tree-action-dropdown[hidden] {
+  display: none;
+}
+
+.tree-action-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  color: var(--text-color);
+}
+
+.tree-action-dropdown button:hover {
+  background: var(--hover-bg);
+}
+
+.tree-action-dropdown svg {
+  flex-shrink: 0;
+  color: var(--muted-color);
 }
 
 #editor-pane {
@@ -162,9 +257,15 @@ html, body {
   letter-spacing: -0.01em;
 }
 
-#btn-toggle-source {
+#editor-toolbar-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 8px;
   margin-top: 8px;
+}
+
+#btn-copy-source,
+#btn-toggle-source {
   padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid var(--sidebar-border);
@@ -175,6 +276,7 @@ html, body {
   color: var(--muted-color);
 }
 
+#btn-copy-source:hover,
 #btn-toggle-source:hover {
   background: var(--hover-bg);
 }
@@ -437,13 +539,6 @@ html, body {
   gap: 8px;
 }
 
-.modal-menu-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-
 .modal-btn {
   padding: 6px 14px;
   border-radius: 6px;
@@ -470,9 +565,6 @@ html, body {
   color: #fff;
 }
 
-.modal-menu-item {
-  text-align: left;
-}
 
 .inline-toolbar {
   position: fixed;

@@ -5,6 +5,17 @@ window.NotesTree = (function () {
   var selectedPath = null;
   var currentTree = [];
   var expandedPaths = {};
+  var openDropdown = null;
+
+  var ICON_RENAME = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+  var ICON_MOVE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a1 1 0 0 1 1-1h4l2 2h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z"/><path d="M9 13h6M12 10l3 3-3 3"/></svg>';
+  var ICON_DELETE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
+
+  var NODE_ACTIONS = [
+    { label: '重新命名', icon: ICON_RENAME, run: 'rename' },
+    { label: '搬移', icon: ICON_MOVE, run: 'move' },
+    { label: '刪除', icon: ICON_DELETE, run: 'delete' },
+  ];
 
   function countNotes(node) {
     var count = 0;
@@ -18,10 +29,21 @@ window.NotesTree = (function () {
     return count;
   }
 
+  function closeOpenDropdown() {
+    if (openDropdown) {
+      openDropdown.hidden = true;
+      openDropdown = null;
+    }
+  }
+
   function init(containerEl, callbacks) {
     container = containerEl;
     onSelect = callbacks.onSelect;
     onFolderClick = callbacks.onFolderClick;
+
+    document.addEventListener('click', function () {
+      closeOpenDropdown();
+    });
 
     container.addEventListener('dragover', function (e) {
       e.preventDefault();
@@ -52,6 +74,7 @@ window.NotesTree = (function () {
   }
 
   function render() {
+    openDropdown = null;
     container.innerHTML = '';
     container.appendChild(renderNodes(currentTree));
   }
@@ -94,15 +117,21 @@ window.NotesTree = (function () {
     row.appendChild(icon);
     row.appendChild(label);
 
+    var trailing = document.createElement('span');
+    trailing.className = 'tree-node-trailing';
+
     if (node.type === 'folder') {
       var noteCount = countNotes(node);
       if (noteCount > 0) {
         var countBadge = document.createElement('span');
         countBadge.className = 'tree-node-count';
         countBadge.textContent = String(noteCount);
-        row.appendChild(countBadge);
+        trailing.appendChild(countBadge);
       }
     }
+
+    trailing.appendChild(renderActionMenu(node));
+    row.appendChild(trailing);
 
     row.addEventListener('click', function () {
       if (node.type === 'folder') {
@@ -114,11 +143,6 @@ window.NotesTree = (function () {
       } else if (onSelect) {
         onSelect(node);
       }
-    });
-
-    row.addEventListener('contextmenu', function (e) {
-      e.preventDefault();
-      showContextMenu(node);
     });
 
     row.draggable = true;
@@ -162,20 +186,52 @@ window.NotesTree = (function () {
     return el;
   }
 
-  function showContextMenu(node) {
-    window.NotesModal.menu('節點：' + node.name, [
-      { label: '重新命名', value: 'rename' },
-      { label: '搬移', value: 'move' },
-      { label: '刪除', value: 'delete' },
-    ]).then(function (action) {
-      if (action === 'rename') {
-        handleRename(node);
-      } else if (action === 'delete') {
-        handleDelete(node);
-      } else if (action === 'move') {
-        handleMove(node);
-      }
+  function renderActionMenu(node) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'tree-action-menu';
+
+    var trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'tree-action-trigger';
+    trigger.title = '更多操作';
+    trigger.textContent = '⋮';
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'tree-action-dropdown';
+    dropdown.hidden = true;
+
+    NODE_ACTIONS.forEach(function (action) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.innerHTML = action.icon + '<span>' + action.label + '</span>';
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closeOpenDropdown();
+        if (action.run === 'rename') {
+          handleRename(node);
+        } else if (action.run === 'move') {
+          handleMove(node);
+        } else if (action.run === 'delete') {
+          handleDelete(node);
+        }
+      });
+      dropdown.appendChild(btn);
     });
+
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (openDropdown === dropdown) {
+        closeOpenDropdown();
+        return;
+      }
+      closeOpenDropdown();
+      dropdown.hidden = false;
+      openDropdown = dropdown;
+    });
+
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+    return wrapper;
   }
 
   function parentDirOf(path) {

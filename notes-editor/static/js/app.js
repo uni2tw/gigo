@@ -7,6 +7,8 @@
   var blockEditorEl = null;
   var sourceEditorEl = null;
   var toggleSourceBtn = null;
+  var copySourceBtn = null;
+  var copyFeedbackTimer = null;
 
   function parentDirOf(path) {
     var parts = path.split('/');
@@ -65,6 +67,51 @@
 
   function toggleViewMode() {
     setViewMode(viewMode === 'block' ? 'source' : 'block');
+  }
+
+  function getCurrentMarkdownSource() {
+    if (viewMode === 'source') {
+      return sourceEditorEl.value;
+    }
+    return window.NotesEditor.getMarkdownSource();
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    var textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(textarea);
+    return ok ? Promise.resolve() : Promise.reject(new Error('複製失敗'));
+  }
+
+  function copyCurrentSource() {
+    if (!currentNode) {
+      return;
+    }
+    copyToClipboard(getCurrentMarkdownSource()).then(function () {
+      if (copyFeedbackTimer) {
+        clearTimeout(copyFeedbackTimer);
+      }
+      copySourceBtn.textContent = '已複製！';
+      copyFeedbackTimer = setTimeout(function () {
+        copySourceBtn.textContent = '複製原始碼';
+      }, 1500);
+    }).catch(function () {
+      window.alert('複製失敗，請手動選取原始碼內容複製。');
+    });
   }
 
   function setStatus(text) {
@@ -138,6 +185,7 @@
     blockEditorEl = document.getElementById('block-editor');
     sourceEditorEl = document.getElementById('source-editor');
     toggleSourceBtn = document.getElementById('btn-toggle-source');
+    copySourceBtn = document.getElementById('btn-copy-source');
 
     window.NotesTree.init(document.getElementById('tree-root'), {
       onSelect: selectNode,
@@ -154,6 +202,7 @@
       promptCreate('note');
     });
     toggleSourceBtn.addEventListener('click', toggleViewMode);
+    copySourceBtn.addEventListener('click', copyCurrentSource);
     sourceEditorEl.addEventListener('input', scheduleSave);
 
     reloadTree();
