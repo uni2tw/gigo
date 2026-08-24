@@ -160,3 +160,10 @@
 - [x] 23.1 `#sidebar` 改為 `display: flex; flex-direction: column;`，`#tree-root` 設為 `flex: 1`，使其確實撐滿剩餘垂直空間；`#sidebar-header` 補上 `flex-shrink: 0`
 - [x] 23.2 以 `document.elementFromPoint()` 在畫面下方視覺空白處取樣確認回傳的是 `#tree-root`（先前僅對 DOM 參照直接派發事件，未驗證視覺空白是否真的屬於該元素）
 - [x] 23.3 端對端驗證：以視覺座標為基準派發 `dragover`/`drop`，確認拖到畫面下方空白處能正確搬回筆記根目錄
+
+## 24. Backspace 於區塊文字最前面併入上一個區塊
+
+- [x] 24.1 新增 `isCaretAtStart(textEl)`：以 `Range` 量測游標到區塊起點間是否有文字內容，判斷游標是否位於區塊最前面
+- [x] 24.2 新增 `mergeIntoPreviousBlock(block, textEl)`：將目前區塊文字併入依展開順序排列的上一個可視區塊，移除目前區塊並升級其子項目補位；已是第一個區塊時安全 no-op
+- [x] 24.3 新增 `focusBlockAtTextOffset(id, offset)`：以 `TreeWalker` 依純文字字數定位游標，將編輯焦點移至合併後文字中原交接處
+- [x] 24.4 以隔離測試伺服器＋真實鍵盤事件驗證：合併結果、`Ctrl+Z` 復原、第一個區塊時的 no-op

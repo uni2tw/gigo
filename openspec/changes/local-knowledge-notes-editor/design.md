@@ -207,6 +207,13 @@ Python 3.8 是官方最後一個提供 Windows 7 安裝版的版本（Python 3.9
 實際排查發現：`#tree-root` 本身沒有任何高度相關的 CSS，只會撐到樹狀節點內容本身的高度，並不會延伸填滿 `#sidebar` 剩餘的垂直空間。畫面上看起來的「空白處」其實是 `#sidebar`（`#tree-root` 的父層）自己的背景，`#tree-root` 的 `dragover`/`drop` 監聽器根本接不到那個區域的事件——瀏覽器對「沒有註冊 drop 監聽、且沒有呼叫 `preventDefault()`」的區域，預設就是顯示禁止圖示、drop 不會觸發任何行為，恰好對應使用者描述的現象。
 
 修正：讓 `#sidebar` 改為 `display: flex; flex-direction: column;`，並讓 `#tree-root` 設為 `flex: 1`，使其確實撐滿 `#sidebar` 扣除頂部 `#sidebar-header` 之後的剩餘空間（`#sidebar-header` 另外補上 `flex-shrink: 0` 避免筆記很多、内容擠壓時被壓縮）。修正後以 `document.elementFromPoint()` 在畫面下方視覺空白處取樣，確認該座標確實回傳 `#tree-root`（或其內部），並用該座標為基準派發 `dragover`/`drop` 合成事件（而非直接對 DOM 參照派發），驗證搬回最外層確實成功——這種「以視覺座標定位再派發事件」的驗證方式比先前「直接對元素參照派發」更貼近真實使用者操作，之後測試拖放相關功能應優先採用此方式。
+
+### Backspace 於區塊文字最前面時併入上一個區塊
+先前 `Backspace` 只處理「區塊文字已清空」這一種情況（`removeBlock`）；游標在非空文字最前面按 `Backspace` 時，因為每個區塊各自是獨立的 `contenteditable` 元素，瀏覽器預設行為在該元素起始位置無事可刪，實際上什麼也不會發生，不符合一般大綱編輯器（Workflowy/Notion/Logseq）「併入上一個區塊」的直覺。
+
+新增 `isCaretAtStart(textEl)`：以 `Range` 量測游標所在位置到區塊起點之間是否有任何文字內容，取代單純比對 `range.startOffset === 0`（避免游標落在巢狀行內格式標籤內時誤判）。命中後呼叫 `mergeIntoPreviousBlock(block, textEl)`：取得依展開順序排列的上一個可視區塊（`adjacentVisibleBlockId(..., -1)`），將目前區塊的 Markdown 文字接在該區塊文字之後、移除目前區塊（原有子項目升級補位，作法與 `removeBlock` 一致），並將編輯焦點移至合併後文字中「原上一個區塊文字結尾」的交接處。若已是依展開順序排列的第一個區塊（找不到上一個可視區塊），則不做任何事，避免拋錯。
+
+游標落點的計算：因為區塊內文字可能包含巢狀行內格式標籤（`<b>`、`<code>` 等），無法直接用單一文字節點的 offset 定位，因此另外實作 `focusBlockAtTextOffset(id, offset)`，以 `TreeWalker` 走訪目標區塊內所有文字節點、依純文字字數（不含標籤）累加找到對應的節點與位移，再設定 `Range`／`Selection`。已透過隔離測試伺服器以真實鍵盤事件（而非直接呼叫內部函式）驗證：合併結果、`Ctrl+Z` 復原、以及「已是第一個區塊」時的 no-op 均符合預期。
 ## Risks / Trade-offs
 
 - [Python 3.8 已停止官方安全更新] → 僅作為本機離線工具使用，不對外部網路開放服務，降低此風險的實際影響；於文件中註明此限制。

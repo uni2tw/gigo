@@ -435,6 +435,11 @@ window.NotesEditor = (function () {
       e.preventDefault();
       removeBlock(block._id);
       commitChange(true);
+    } else if (e.key === 'Backspace' && isCaretAtStart(textEl)) {
+      e.preventDefault();
+      if (mergeIntoPreviousBlock(block, textEl)) {
+        commitChange(true);
+      }
     } else if (e.key === 'ArrowUp' && e.ctrlKey) {
       e.preventDefault();
       block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
@@ -521,6 +526,21 @@ window.NotesEditor = (function () {
     };
   }
 
+  function isCaretAtStart(textEl) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) {
+      return false;
+    }
+    var range = sel.getRangeAt(0);
+    if (!textEl.contains(range.startContainer)) {
+      return false;
+    }
+    var probe = document.createRange();
+    probe.selectNodeContents(textEl);
+    probe.setEnd(range.startContainer, range.startOffset);
+    return probe.toString().length === 0;
+  }
+
   var CONTINUABLE_TYPES = ['list_item', 'ordered_item', 'checklist_item'];
 
   function insertSiblingAfter(block, initialText) {
@@ -577,6 +597,66 @@ window.NotesEditor = (function () {
         focusBlock(ownerBlock._id, true);
       }
     }
+  }
+
+  function mergeIntoPreviousBlock(block, textEl) {
+    var prevId = adjacentVisibleBlockId(block._id, -1);
+    if (!prevId) {
+      return false;
+    }
+    var prevBlock = findBlock(blocks, prevId);
+    var list = findParentList(blocks, block._id);
+    if (!prevBlock || !list) {
+      return false;
+    }
+
+    var probe = document.createElement('div');
+    probe.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(prevBlock.text || '');
+    var joinOffset = probe.textContent.length;
+
+    var currentText = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    prevBlock.text = (prevBlock.text || '') + currentText;
+
+    var idx = list.indexOf(block);
+    list.splice(idx, 1);
+    var orphans = block.children || [];
+    for (var i = 0; i < orphans.length; i++) {
+      list.splice(idx + i, 0, orphans[i]);
+    }
+
+    render();
+    focusBlockAtTextOffset(prevBlock._id, joinOffset);
+    return true;
+  }
+
+  function focusBlockAtTextOffset(id, offset) {
+    setTimeout(function () {
+      var row = container.querySelector('[data-id="' + id + '"] .block-text');
+      if (!row) {
+        return;
+      }
+      row.focus();
+      var walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT, null, false);
+      var remaining = offset;
+      var node = walker.nextNode();
+      var range = document.createRange();
+      var sel = window.getSelection();
+      while (node) {
+        if (remaining <= node.textContent.length) {
+          range.setStart(node, remaining);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          return;
+        }
+        remaining -= node.textContent.length;
+        node = walker.nextNode();
+      }
+      range.selectNodeContents(row);
+      range.collapse(offset <= 0);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, 0);
   }
 
   function indentBlock(id) {
