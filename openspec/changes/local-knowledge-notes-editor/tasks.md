@@ -167,3 +167,9 @@
 - [x] 24.2 新增 `mergeIntoPreviousBlock(block, textEl)`：將目前區塊文字併入依展開順序排列的上一個可視區塊，移除目前區塊並升級其子項目補位；已是第一個區塊時安全 no-op
 - [x] 24.3 新增 `focusBlockAtTextOffset(id, offset)`：以 `TreeWalker` 依純文字字數定位游標，將編輯焦點移至合併後文字中原交接處
 - [x] 24.4 以隔離測試伺服器＋真實鍵盤事件驗證：合併結果、`Ctrl+Z` 復原、第一個區塊時的 no-op
+
+## 25. 修正在已清空的清單項目上按 Enter 會無限新增空 bullet
+
+- [x] 25.1 Enter 處理最前面加入攔截：目前區塊文字已清空且型態屬於 `CONTINUABLE_TYPES` 時，直接將該區塊 `type` 改為 `paragraph`（無標記），焦點留在原區塊，不建立新區塊
+- [x] 25.2 `insertSiblingAfter` 於「非延續」情境下新建區塊的預設型態，由 `list_item` 改為 `paragraph`，避免轉換後的空段落再按 Enter 又生出新 bullet
+- [x] 25.3 以隔離測試伺服器＋真實鍵盤事件驗證：非空清單項目按 Enter 延續型態（行為不變）→ 空清單項目再按 Enter 轉為無標記段落、不新增區塊 → 空段落再按 Enter 才新增新的空段落

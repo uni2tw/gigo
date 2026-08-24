@@ -413,6 +413,14 @@ window.NotesEditor = (function () {
 
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (textEl.textContent === '' && CONTINUABLE_TYPES.indexOf(block.type) !== -1) {
+        block.type = 'paragraph';
+        block.checked = false;
+        render();
+        focusBlock(block._id, true);
+        commitChange(true);
+        return;
+      }
       var split = splitAtCaret(textEl);
       if (split.atStart && !split.atEnd) {
         insertEmptySiblingBefore(block);
@@ -548,7 +556,7 @@ window.NotesEditor = (function () {
     var idx = list.indexOf(block);
     var continued = CONTINUABLE_TYPES.indexOf(block.type) !== -1;
     var newBlock = {
-      type: continued ? block.type : 'list_item',
+      type: continued ? block.type : 'paragraph',
       text: initialText || '',
       level: 0,
       children: [],
