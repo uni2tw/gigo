@@ -16,18 +16,70 @@
     return parts.join('/');
   }
 
+  function findNodeByPath(nodes, path) {
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].path === path) {
+        return nodes[i];
+      }
+      var found = findNodeByPath(nodes[i].children || [], path);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  function pathToHash(path) {
+    return '#' + path.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function hashToPath() {
+    var hash = window.location.hash;
+    if (!hash || hash.length < 2) {
+      return null;
+    }
+    return hash.slice(1).split('/').map(decodeURIComponent).join('/');
+  }
+
+  function setHashForPath(path) {
+    var target = pathToHash(path);
+    if (window.location.hash !== target) {
+      history.replaceState(null, '', target);
+    }
+  }
+
+  function clearHash() {
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
   function reloadTree() {
     return window.NotesApi.getTree().then(function (data) {
       window.NotesTree.setTree(data.tree);
+      return data.tree;
     }).catch(function (err) {
       window.alert('讀取樹狀結構失敗：' + err.message);
     });
+  }
+
+  function restoreFromHash(tree) {
+    var path = hashToPath();
+    if (!path || !tree) {
+      return;
+    }
+    var node = findNodeByPath(tree, path);
+    if (node && node.type === 'note') {
+      window.NotesTree.revealPath(node.path);
+      selectNode(node);
+    }
   }
 
   function selectNode(node) {
     currentNode = node;
     activeParentPath = parentDirOf(node.path);
     window.NotesTree.setSelected(node.path);
+    setHashForPath(node.path);
     document.getElementById('editor-empty').hidden = true;
     document.getElementById('editor-content').hidden = false;
     document.getElementById('note-title').textContent = node.name;
@@ -169,6 +221,7 @@
       currentNode = null;
       document.getElementById('editor-empty').hidden = false;
       document.getElementById('editor-content').hidden = true;
+      clearHash();
     }
     reloadTree();
   }
@@ -176,6 +229,7 @@
   function onNodeMoved(oldPath, newPath) {
     if (currentNode && currentNode.path === oldPath) {
       currentNode.path = newPath;
+      setHashForPath(newPath);
     }
     reloadTree();
   }
@@ -205,7 +259,9 @@
     copySourceBtn.addEventListener('click', copyCurrentSource);
     sourceEditorEl.addEventListener('input', scheduleSave);
 
-    reloadTree();
+    reloadTree().then(function (tree) {
+      restoreFromHash(tree);
+    });
   });
 
   window.NotesApp = {

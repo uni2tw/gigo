@@ -179,3 +179,11 @@
 - [x] 26.1 `renderMarker` 對非 `list_item`／`ordered_item` 型態回傳 `null`，不再回傳空文字的 `.block-bullet`
 - [x] 26.2 `renderBlock` 只在 `renderMarker` 有回傳值時才附加該元素，讓沒有標記的區塊不佔用清單標記欄位的版面空間
 - [x] 26.3 以使用者真實筆記複本＋隔離測試伺服器驗證：標題文字左邊界較清單文字少 22px（原清單標記欄位寬度）
+
+## 27. 重新整理頁面後恢復先前開啟的筆記
+
+- [x] 27.1 新增 `pathToHash`／`hashToPath`／`setHashForPath`／`clearHash`：以 URL hash（各路徑片段 `encodeURIComponent` 編碼）反映目前開啟的筆記路徑，用 `history.replaceState` 更新，不新增瀏覽器歷史紀錄
+- [x] 27.2 `selectNode` 選取筆記時同步更新 hash；`onNodeMoved`／`onNodeDeleted` 分別同步更新／清除 hash，避免殘留指向舊路徑或已刪除筆記的網址
+- [x] 27.3 新增 `findNodeByPath`（遞迴搜尋樹狀資料）與 `NotesTree.revealPath`（展開指定路徑上所有祖先資料夾）；新增 `restoreFromHash(tree)`，在 `reloadTree()` 完成後呼叫，還原 URL hash 對應的筆記並展開其所在資料夾
+- [x] 27.4 找不到 hash 對應節點時安全 no-op，維持預設空白畫面，不拋錯
+- [x] 27.5 以隔離測試伺服器＋真實瀏覽器導覽（帶 hash 的網址重新整理，非單純呼叫內部函式）驗證：選取後 hash 更新、重新整理後正確恢復筆記與資料夾展開狀態、無 hash 時維持空白畫面、hash 指向不存在筆記時安全 no-op

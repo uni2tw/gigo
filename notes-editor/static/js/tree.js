@@ -73,6 +73,17 @@ window.NotesTree = (function () {
     render();
   }
 
+  function revealPath(path) {
+    var parts = path.split('/');
+    parts.pop();
+    var acc = '';
+    parts.forEach(function (part) {
+      acc = acc ? acc + '/' + part : part;
+      expandedPaths[acc] = true;
+    });
+    render();
+  }
+
   function render() {
     openDropdown = null;
     container.innerHTML = '';
@@ -317,5 +328,6 @@ window.NotesTree = (function () {
     init: init,
     setTree: setTree,
     setSelected: setSelected,
+    revealPath: revealPath,
   };
 })();
