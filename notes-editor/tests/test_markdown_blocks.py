@@ -106,6 +106,69 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertTrue(block.checked)
         self.assertEqual(block.to_dict()['checked'], True)
 
+    def test_table_basic_parse(self):
+        text = (
+            '| 項目 | 每月金額 |\n'
+            '| ---- | ----------: |\n'
+            '| 飲食 | $24,000 |\n'
+            '| 房租 | $17,000 |\n'
+        )
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].type, 'table')
+        self.assertEqual(blocks[0].rows, [
+            ['項目', '每月金額'],
+            ['飲食', '$24,000'],
+            ['房租', '$17,000'],
+        ])
+        self.assertEqual(blocks[0].align, [None, 'right'])
+
+    def test_table_alignment_markers(self):
+        text = (
+            '| a | b | c |\n'
+            '| :--- | :---: | ---: |\n'
+            '| 1 | 2 | 3 |\n'
+        )
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].align, ['left', 'center', 'right'])
+
+    def test_table_ends_at_blank_line_or_non_table_row(self):
+        text = (
+            '| a | b |\n'
+            '| --- | --- |\n'
+            '| 1 | 2 |\n'
+            '\n'
+            'plain paragraph\n'
+        )
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0].type, 'table')
+        self.assertEqual(blocks[1].type, 'paragraph')
+
+    def test_table_row_without_separator_is_plain_paragraphs(self):
+        text = '| not a table | just text |\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'paragraph')
+
+    def test_table_round_trip(self):
+        text = (
+            '| a | b |\n'
+            '| :--- | ---: |\n'
+            '| 1 | 2 |\n'
+            '| **3** | 4 |\n'
+        )
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        blocks_again = parse_markdown_to_blocks(serialized)
+        self.assertEqual(blocks[0].rows, blocks_again[0].rows)
+        self.assertEqual(blocks[0].align, blocks_again[0].align)
+
+    def test_table_serialize_pads_ragged_rows(self):
+        from noteapp.markdown_blocks import Block
+        block = Block('table', rows=[['a', 'b'], ['1']], align=[])
+        serialized = blocks_to_markdown([block])
+        self.assertEqual(serialized, '| a | b |\n| --- | --- |\n| 1 |  |\n')
+
 
 if __name__ == '__main__':
     unittest.main()

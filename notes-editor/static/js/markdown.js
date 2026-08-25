@@ -5,6 +5,8 @@ window.NotesMarkdown = (function () {
   var CHECKLIST_RE = /^( *)[-*]\s+\[([ xX])\]\s+(.*)$/;
   var ORDERED_RE = /^( *)(\d+)\.\s+(.*)$/;
   var LIST_RE = /^( *)([-*])\s+(.*)$/;
+  var TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+  var TABLE_SEP_CELL_RE = /^:?-+:?$/;
 
   function repeatStr(s, n) {
     var out = '';
@@ -14,15 +16,81 @@ window.NotesMarkdown = (function () {
     return out;
   }
 
+  function repeatArray(value, n) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      out.push(value);
+    }
+    return out;
+  }
+
+  function splitTableRow(line) {
+    var stripped = line.trim();
+    if (stripped.charAt(0) === '|') {
+      stripped = stripped.slice(1);
+    }
+    if (stripped.charAt(stripped.length - 1) === '|') {
+      stripped = stripped.slice(0, -1);
+    }
+    return stripped.split('|').map(function (cell) {
+      return cell.trim();
+    });
+  }
+
+  function isTableSeparatorRow(line) {
+    if (!TABLE_ROW_RE.test(line)) {
+      return false;
+    }
+    var cells = splitTableRow(line);
+    return cells.length > 0 && cells.every(function (cell) {
+      return TABLE_SEP_CELL_RE.test(cell);
+    });
+  }
+
+  function parseTableAlign(sepCells) {
+    return sepCells.map(function (cell) {
+      var left = cell.charAt(0) === ':';
+      var right = cell.charAt(cell.length - 1) === ':';
+      if (left && right) {
+        return 'center';
+      }
+      if (right) {
+        return 'right';
+      }
+      if (left) {
+        return 'left';
+      }
+      return null;
+    });
+  }
+
   function parseMarkdownToBlocks(text) {
     var blocks = [];
     var listStack = []; // [{depth, block}], current nesting chain
     var lines = text.split(/\r\n|\r|\n/);
+    var i = 0;
+    var n = lines.length;
 
-    lines.forEach(function (rawLine) {
+    while (i < n) {
+      var rawLine = lines[i];
+
       if (rawLine.replace(/\s/g, '') === '') {
         listStack = [];
-        return;
+        i += 1;
+        continue;
+      }
+
+      if (TABLE_ROW_RE.test(rawLine) && i + 1 < n && isTableSeparatorRow(lines[i + 1])) {
+        var rows = [splitTableRow(rawLine)];
+        var align = parseTableAlign(splitTableRow(lines[i + 1]));
+        i += 2;
+        while (i < n && lines[i].replace(/\s/g, '') !== '' && TABLE_ROW_RE.test(lines[i])) {
+          rows.push(splitTableRow(lines[i]));
+          i += 1;
+        }
+        blocks.push({ type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align });
+        listStack = [];
+        continue;
       }
 
       var headingMatch = HEADING_RE.exec(rawLine);
@@ -35,14 +103,16 @@ window.NotesMarkdown = (function () {
           checked: false,
         });
         listStack = [];
-        return;
+        i += 1;
+        continue;
       }
 
       var quoteMatch = QUOTE_RE.exec(rawLine);
       if (quoteMatch) {
         blocks.push({ type: 'quote', level: 0, text: quoteMatch[1].trim(), children: [], checked: false });
         listStack = [];
-        return;
+        i += 1;
+        continue;
       }
 
       var checklistMatch = CHECKLIST_RE.exec(rawLine);
@@ -79,14 +149,37 @@ window.NotesMarkdown = (function () {
           listStack[listStack.length - 1].block.children.push(newBlock);
         }
         listStack.push({ depth: depth, block: newBlock });
-        return;
+        i += 1;
+        continue;
       }
 
       blocks.push({ type: 'paragraph', level: 0, text: rawLine.trim(), children: [], checked: false });
       listStack = [];
-    });
+      i += 1;
+    }
 
     return blocks;
+  }
+
+  function formatTableRow(cells) {
+    return '| ' + cells.join(' | ') + ' |';
+  }
+
+  function formatTableSeparator(align, colCount) {
+    var parts = [];
+    for (var i = 0; i < colCount; i++) {
+      var a = align && align[i];
+      if (a === 'center') {
+        parts.push(':---:');
+      } else if (a === 'right') {
+        parts.push('---:');
+      } else if (a === 'left') {
+        parts.push(':---');
+      } else {
+        parts.push('---');
+      }
+    }
+    return formatTableRow(parts);
   }
 
   function blocksToMarkdown(blocks) {
@@ -112,6 +205,15 @@ window.NotesMarkdown = (function () {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- [' + (block.checked ? 'x' : ' ') + '] ' + block.text);
         } else if (block.type === 'list_item') {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- ' + block.text);
+        } else if (block.type === 'table') {
+          var rows = (block.rows && block.rows.length) ? block.rows : [['']];
+          var colCount = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+          var header = rows[0].concat(repeatArray('', colCount - rows[0].length));
+          lines.push(formatTableRow(header));
+          lines.push(formatTableSeparator(block.align || [], colCount));
+          rows.slice(1).forEach(function (r) {
+            lines.push(formatTableRow(r.concat(repeatArray('', colCount - r.length))));
+          });
         } else {
           lines.push(block.text);
         }

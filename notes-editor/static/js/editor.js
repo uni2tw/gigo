@@ -152,6 +152,8 @@ window.NotesEditor = (function () {
         text: b.text,
         level: b.level || 0,
         checked: !!b.checked,
+        rows: b.rows || [],
+        align: b.align || [],
         children: stripInternal(b.children || []),
       };
     });
@@ -223,7 +225,47 @@ window.NotesEditor = (function () {
     return wrapper;
   }
 
+  function renderTableBlock(block) {
+    var group = document.createElement('div');
+
+    var row = document.createElement('div');
+    row.className = 'block-row block-table-row';
+    row.dataset.id = block._id;
+
+    var table = document.createElement('table');
+    table.className = 'block-table';
+    var tbody = document.createElement('tbody');
+
+    (block.rows || []).forEach(function (rowCells, rowIndex) {
+      var tr = document.createElement('tr');
+      rowCells.forEach(function (cellText, colIndex) {
+        var cell = document.createElement(rowIndex === 0 ? 'th' : 'td');
+        cell.contentEditable = 'true';
+        var align = block.align && block.align[colIndex];
+        if (align) {
+          cell.style.textAlign = align;
+        }
+        cell.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
+        cell.addEventListener('input', function () {
+          block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(cell);
+          commitChange(false);
+        });
+        tr.appendChild(cell);
+      });
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    row.appendChild(table);
+    group.appendChild(row);
+    return group;
+  }
+
   function renderBlock(block, orderedIndex) {
+    if (block.type === 'table') {
+      return renderTableBlock(block);
+    }
+
     var group = document.createElement('div');
 
     var row = document.createElement('div');
@@ -618,7 +660,7 @@ window.NotesEditor = (function () {
     }
     var prevBlock = findBlock(blocks, prevId);
     var list = findParentList(blocks, block._id);
-    if (!prevBlock || !list) {
+    if (!prevBlock || !list || prevBlock.type === 'table') {
       return false;
     }
 

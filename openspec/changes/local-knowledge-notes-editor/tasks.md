@@ -187,3 +187,24 @@
 - [x] 27.3 新增 `findNodeByPath`（遞迴搜尋樹狀資料）與 `NotesTree.revealPath`（展開指定路徑上所有祖先資料夾）；新增 `restoreFromHash(tree)`，在 `reloadTree()` 完成後呼叫，還原 URL hash 對應的筆記並展開其所在資料夾
 - [x] 27.4 找不到 hash 對應節點時安全 no-op，維持預設空白畫面，不拋錯
 - [x] 27.5 以隔離測試伺服器＋真實瀏覽器導覽（帶 hash 的網址重新整理，非單純呼叫內部函式）驗證：選取後 hash 更新、重新整理後正確恢復筆記與資料夾展開狀態、無 hash 時維持空白畫面、hash 指向不存在筆記時安全 no-op
+
+## 28. 表格區塊（第一階段：正確顯示＋編輯既有儲存格）
+
+- [x] 28.1 研究 Obsidian／Notion／Outline 的表格 UX 慣例，與使用者確認拆成「先顯示＋可編輯儲存格」與「新增/刪除列欄＋插入表格選單」兩階段
+- [x] 28.2 `Block`（Python，`markdown_blocks.py`）與 JS block 物件新增 `rows`（二維儲存格文字陣列）、`align`（每欄對齊）欄位
+- [x] 28.3 `parse_markdown_to_blocks`／`parseMarkdownToBlocks` 改為索引式迴圈，辨識「`| ... |` 行 + 下一行為合法分隔列」開始收表格區塊，直到空行或非表格行為止；沒有合法分隔列時退回一般段落
+- [x] 28.4 `blocks_to_markdown`／`blocksToMarkdown` 新增表格序列化：依 `align` 輸出分隔列，各列儲存格數補齊到最長列
+- [x] 28.5 `editor.js` 新增 `renderTableBlock`，將表格區塊渲染成真正的 `<table>`（`<th>`/`<td>`），每個儲存格獨立 `contenteditable`，`input` 時更新 `block.rows[r][c]` 並 `commitChange(false)`（不觸發整體重繪），比照一般區塊用 `inlineMarkdownToHtml`/`htmlToInlineMarkdown` 處理行內格式
+- [x] 28.6 `stripInternal` 一併保留 `rows`／`align` 欄位，避免存檔／undo 快照時遺失表格內容
+- [x] 28.7 `mergeIntoPreviousBlock` 加上守衛：上一個可視區塊是表格時視為找不到上一個區塊，不合併，避免文字被無聲寫進表格未使用的 `.text` 欄位而遺失
+- [x] 28.8 新增 CSS `.block-table`／`.block-table-row`／儲存格樣式
+- [x] 28.9 `tests/test_markdown_blocks.py` 新增表格解析/對齊/結束條件/往返/序列化補齊測試，既有測試全數維持通過（合計 36 個）
+- [x] 28.10 以隔離測試伺服器＋真實瀏覽器操作，使用使用者提供的真實表格內容驗證：正確渲染成 `<table>`（含對齊、粗體儲存格）、編輯儲存格後自動存檔內容正確、原始碼模式雙向切換正確、在原始碼模式貼上全新表格後可正確渲染（作為第一階段的「克難插入表格」方式）
+- [x] 28.11 README 補充表格支援範圍與目前限制（無新增/刪除列欄、無插入表格選單、儲存格僅支援單行文字與行內格式）
+
+## 29. 修正標題／清單縮排不對齊、窄表格右側留白
+
+- [x] 29.1 `.block-row` 加上 `position: relative`；調整格式鈕（`.block-format-menu`）與摺疊箭頭（`.block-collapse-toggle`）改為 `position: absolute`（分別 `left: -48px`／`-22px`），不再佔用 flex 版面空間
+- [x] 29.2 重新驗算巢狀縮排：浮動控制項相對於「該列自身」定位，深度 d 的絕對水平位置為 `d × 22 - 48`px，隨深度增加只會更靠右、不會更容易被裁切，且不同深度的列本來就在不同垂直位置、不會互相重疊；沿用既有 22px／層縮排，不需放寬
+- [x] 29.3 `.block-table` 新增 `width: 100%`，讓表格撐滿至與標題／段落文字相同的右邊界，不因內容較短而變窄
+- [x] 29.4 以隔離測試伺服器＋真實瀏覽器（含巢狀子項目、多個表格、多種標題層級的混合測試筆記）驗證：所有非清單型態文字左邊界統一對齊區塊自身框線；清單/巢狀清單項目文字統一多縮進 22px 且巢狀相對縮排不變；表格不論內容長短右邊界都對齊標題/段落；調整格式鈕（含下拉選單套用格式）與摺疊箭頭功能正常、主控台無錯誤
