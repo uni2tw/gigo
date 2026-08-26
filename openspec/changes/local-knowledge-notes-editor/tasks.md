@@ -231,3 +231,12 @@
 - [x] 31.6 改為單一的全域 `document` keydown 監聽器（`init()` 內註冊一次）：以 `container.hidden` 判斷是否在區塊模式；以 `document.activeElement` 是 `document.body` 或落在 `container` 內才攔截，排除彈出視窗輸入框、原始碼模式 textarea 等其他輸入介面；同時移除一般區塊 `handleKeydown` 與表格儲存格（31.2）裡各自處理 `Ctrl+Z`/`Ctrl+Shift+Z`/`Ctrl+Y` 的重複程式碼，避免同一按鍵被兩個監聽器各自觸發一次、造成一次復原兩步
 - [x] 31.7 以隔離測試伺服器完整重現使用者的操作序列並連續按 4 次 `Ctrl+Z`，確認結果與預期完全一致（789 文字消失→789 列消失→456 文字消失→456 列消失）；`Ctrl+Shift+Z` 可正確前進；驗證重新命名彈出視窗輸入框、原始碼模式 textarea 內的 `Ctrl+Z` 不會被攔截（`defaultPrevented` 為 `false`）；驗證一般區塊連續兩次 `Ctrl+Z`（不重新點擊聚焦）也能正確連續復原——確認一併修好了先前記錄過的「復原後焦點消失」這個既有限制，不只是表格專屬
 - [x] 31.8 README 補充表格儲存格內 `Ctrl+Z`/`Ctrl+Shift+Z` 與區塊模式共用同一套復原機制的說明
+
+## 32. 編輯區內直接重新命名筆記＋顯示相對更新時間
+
+- [x] 32.1 `#note-title` 加上 `contenteditable="true"`；`blur` 呼叫 `commitTitleRename()`（空白/未變更則還原不送出、否則呼叫既有 `updateNode` API 並重用既有的 `onNodeMoved` 收尾）；`keydown` 處理 `Enter`（阻止換行、觸發 `blur()`）與 `Esc`（還原文字後 `blur()`，不送出）
+- [x] 32.2 順手修正既有落差：`onNodeMoved` 補上同步更新 `currentNode.name`、編輯區標題文字、`NotesTree.setSelected(newPath)`——這個落差先前就存在（透過樹狀索引選單重新命名目前開啟中的筆記，編輯區標題跟樹狀反白都不會同步更新），只是沒被注意到
+- [x] 32.3 後端 `GET /api/notes/<path>` 回應新增 `updated_at`（`os.path.getmtime()`）；`tests/test_api_smoke.py` 新增型別斷言
+- [x] 32.4 前端新增 `formatRelativeTime(epochSeconds)`（剛剛更新／N 分鐘前／N 小時前／N 天前／N 個月前／N 年前），`selectNode()` 載入成功後取代原本的 `setStatus('')`；不做即時跳動計時器，僅在筆記載入當下計算一次（編輯中／已儲存的即時狀態訊息維持不變，蓋過相對時間顯示）
+- [x] 32.5 以隔離測試伺服器驗證：筆記檔案修改時間設為 21 小時前，開啟後正確顯示「更新於 21 小時前」；點擊標題改名按 `Enter` 後檔案正確重新命名、hash／樹狀標籤／反白同步更新；`Esc` 與清空標題皆正確還原不送出；透過樹狀索引選單重新命名時編輯區標題同步更新；重新整理頁面（帶 hash）後標題與相對時間正確恢復；主控台無錯誤，Python 測試 36 個維持全過
+- [x] 32.6 README 補充標題可直接編輯、更新時間顯示的說明

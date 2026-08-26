@@ -26,6 +26,8 @@ class ApiSmokeTests(unittest.TestCase):
         resp = self.client.get('/api/notes/' + path)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()['blocks'], [])
+        self.assertIn('updated_at', resp.get_json())
+        self.assertIsInstance(resp.get_json()['updated_at'], float)
 
         blocks = [{'type': 'heading', 'level': 1, 'text': 'Hello', 'children': []}]
         resp = self.client.put('/api/notes/' + path, json={'blocks': blocks})

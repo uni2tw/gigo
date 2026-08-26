@@ -73,7 +73,10 @@ def get_note_route(note_path):
         text = f.read()
 
     blocks = markdown_blocks.parse_markdown_to_blocks(text)
-    return jsonify({'blocks': [b.to_dict() for b in blocks]})
+    return jsonify({
+        'blocks': [b.to_dict() for b in blocks],
+        'updated_at': os.path.getmtime(abs_path),
+    })
 
 
 @api_bp.route('/notes/<path:note_path>', methods=['PUT'])

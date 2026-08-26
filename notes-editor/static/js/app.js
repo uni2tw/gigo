@@ -9,11 +9,39 @@
   var toggleSourceBtn = null;
   var copySourceBtn = null;
   var copyFeedbackTimer = null;
+  var noteTitleEl = null;
 
   function parentDirOf(path) {
     var parts = path.split('/');
     parts.pop();
     return parts.join('/');
+  }
+
+  function formatRelativeTime(epochSeconds) {
+    if (!epochSeconds) {
+      return '';
+    }
+    var diffSec = Math.floor((Date.now() - epochSeconds * 1000) / 1000);
+    if (diffSec < 60) {
+      return '剛剛更新';
+    }
+    var diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) {
+      return '更新於 ' + diffMin + ' 分鐘前';
+    }
+    var diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) {
+      return '更新於 ' + diffHour + ' 小時前';
+    }
+    var diffDay = Math.floor(diffHour / 24);
+    if (diffDay < 30) {
+      return '更新於 ' + diffDay + ' 天前';
+    }
+    var diffMonth = Math.floor(diffDay / 30);
+    if (diffMonth < 12) {
+      return '更新於 ' + diffMonth + ' 個月前';
+    }
+    return '更新於 ' + Math.floor(diffDay / 365) + ' 年前';
   }
 
   function findNodeByPath(nodes, path) {
@@ -88,7 +116,7 @@
 
     window.NotesApi.getNote(node.path).then(function (data) {
       window.NotesEditor.load(data.blocks);
-      setStatus('');
+      setStatus(formatRelativeTime(data.updated_at));
     }).catch(function (err) {
       setStatus('載入失敗：' + err.message);
     });
@@ -229,9 +257,34 @@
   function onNodeMoved(oldPath, newPath) {
     if (currentNode && currentNode.path === oldPath) {
       currentNode.path = newPath;
+      currentNode.name = newPath.split('/').pop().replace(/\.md$/, '');
       setHashForPath(newPath);
+      if (noteTitleEl) {
+        noteTitleEl.textContent = currentNode.name;
+      }
     }
+    window.NotesTree.setSelected(newPath);
     reloadTree();
+  }
+
+  function commitTitleRename() {
+    if (!currentNode) {
+      return;
+    }
+    var newName = noteTitleEl.textContent.replace(/\s+/g, ' ').trim();
+    if (!newName || newName === currentNode.name) {
+      noteTitleEl.textContent = currentNode.name;
+      return;
+    }
+    var parentDir = parentDirOf(currentNode.path);
+    var newPath = (parentDir ? parentDir + '/' : '') + newName + '.md';
+    var renamingNode = currentNode;
+    window.NotesApi.updateNode(renamingNode.path, newPath).then(function () {
+      onNodeMoved(renamingNode.path, newPath);
+    }).catch(function (err) {
+      window.alert(err.message);
+      noteTitleEl.textContent = renamingNode.name;
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -240,6 +293,21 @@
     sourceEditorEl = document.getElementById('source-editor');
     toggleSourceBtn = document.getElementById('btn-toggle-source');
     copySourceBtn = document.getElementById('btn-copy-source');
+    noteTitleEl = document.getElementById('note-title');
+
+    noteTitleEl.addEventListener('blur', commitTitleRename);
+    noteTitleEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        noteTitleEl.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (currentNode) {
+          noteTitleEl.textContent = currentNode.name;
+        }
+        noteTitleEl.blur();
+      }
+    });
 
     window.NotesTree.init(document.getElementById('tree-root'), {
       onSelect: selectNode,

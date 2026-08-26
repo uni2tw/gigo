@@ -255,6 +255,17 @@ html, body {
   font-weight: 700;
   margin: 0 0 6px;
   letter-spacing: -0.01em;
+  outline: none;
+  border-radius: 4px;
+  cursor: text;
+}
+
+#note-title:hover {
+  background: var(--hover-bg);
+}
+
+#note-title:focus {
+  background: var(--hover-bg);
 }
 
 #editor-toolbar-actions {
