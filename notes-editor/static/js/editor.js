@@ -19,6 +19,7 @@ window.NotesEditor = (function () {
     { label: '編號清單', type: 'ordered_item', level: 0 },
     { label: '待辦清單', type: 'checklist_item', level: 0 },
     { label: '一般文字', type: 'list_item', level: 0 },
+    { label: '表格', type: 'table', level: 0 },
   ];
 
   var INLINE_BUTTONS = [
@@ -56,6 +57,26 @@ window.NotesEditor = (function () {
       closeOpenDropdown();
     });
     document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('keydown', function (e) {
+      if (container.hidden) {
+        return;
+      }
+      var active = document.activeElement;
+      if (active && active !== document.body && !container.contains(active)) {
+        return;
+      }
+      var isCtrl = e.ctrlKey || e.metaKey;
+      var key = e.key.toLowerCase();
+      if (isCtrl && !e.altKey && key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (isCtrl && !e.altKey && ((key === 'z' && e.shiftKey) || key === 'y')) {
+        e.preventDefault();
+        redo();
+      }
+    });
   }
 
   function setFromPlainBlocks(plainBlocks) {
@@ -225,6 +246,77 @@ window.NotesEditor = (function () {
     return wrapper;
   }
 
+  function addTableRow(block) {
+    var colCount = block.rows[0] ? block.rows[0].length : 1;
+    var newRow = [];
+    for (var i = 0; i < colCount; i++) {
+      newRow.push('');
+    }
+    block.rows.push(newRow);
+    render();
+    focusTableCell(block._id, block.rows.length - 1, 0);
+    commitChange(true);
+  }
+
+  function removeTableRow(block, rowIndex) {
+    if (rowIndex <= 0 || rowIndex >= block.rows.length) {
+      return;
+    }
+    block.rows.splice(rowIndex, 1);
+    render();
+    commitChange(true);
+  }
+
+  function addTableColumn(block) {
+    block.rows.forEach(function (r) {
+      r.push('');
+    });
+    block.align = block.align || [];
+    block.align.push(null);
+    render();
+    focusTableCell(block._id, 0, block.rows[0].length - 1);
+    commitChange(true);
+  }
+
+  function removeTableColumn(block, colIndex) {
+    if (!block.rows[0] || block.rows[0].length <= 1) {
+      return;
+    }
+    block.rows.forEach(function (r) {
+      r.splice(colIndex, 1);
+    });
+    if (block.align) {
+      block.align.splice(colIndex, 1);
+    }
+    render();
+    commitChange(true);
+  }
+
+  function focusTableCell(blockId, rowIndex, colIndex) {
+    setTimeout(function () {
+      var rowEl = container.querySelector('[data-id="' + blockId + '"]');
+      if (!rowEl) {
+        return;
+      }
+      var trs = rowEl.querySelectorAll('tbody > tr');
+      var tr = trs[rowIndex];
+      if (!tr) {
+        return;
+      }
+      var cell = tr.querySelector('[data-col="' + colIndex + '"]');
+      if (!cell) {
+        return;
+      }
+      cell.focus();
+      var range = document.createRange();
+      range.selectNodeContents(cell);
+      range.collapse(false);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, 0);
+  }
+
   function renderTableBlock(block) {
     var group = document.createElement('div');
 
@@ -235,25 +327,116 @@ window.NotesEditor = (function () {
     var table = document.createElement('table');
     table.className = 'block-table';
     var tbody = document.createElement('tbody');
+    var colCount = block.rows[0] ? block.rows[0].length : 0;
 
     (block.rows || []).forEach(function (rowCells, rowIndex) {
       var tr = document.createElement('tr');
+
+      var cornerCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
+      cornerCell.className = 'block-table-control-cell';
+      if (rowIndex > 0) {
+        var delRowBtn = document.createElement('button');
+        delRowBtn.type = 'button';
+        delRowBtn.className = 'block-table-del-row';
+        delRowBtn.title = '刪除這一列';
+        delRowBtn.textContent = '×';
+        delRowBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          removeTableRow(block, rowIndex);
+        });
+        cornerCell.appendChild(delRowBtn);
+      }
+      tr.appendChild(cornerCell);
+
       rowCells.forEach(function (cellText, colIndex) {
         var cell = document.createElement(rowIndex === 0 ? 'th' : 'td');
-        cell.contentEditable = 'true';
         var align = block.align && block.align[colIndex];
         if (align) {
           cell.style.textAlign = align;
         }
-        cell.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
-        cell.addEventListener('input', function () {
-          block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(cell);
+
+        var text = document.createElement('span');
+        text.className = 'block-table-cell-text';
+        text.contentEditable = 'true';
+        text.dataset.col = String(colIndex);
+        text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
+        text.addEventListener('input', function () {
+          block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(text);
           commitChange(false);
         });
+        text.addEventListener('keydown', function (e) {
+          if (e.key !== 'Tab') {
+            return;
+          }
+          e.preventDefault();
+          var totalCols = block.rows[rowIndex].length;
+          if (!e.shiftKey) {
+            if (colIndex + 1 < totalCols) {
+              focusTableCell(block._id, rowIndex, colIndex + 1);
+            } else if (rowIndex + 1 < block.rows.length) {
+              focusTableCell(block._id, rowIndex + 1, 0);
+            } else {
+              addTableRow(block);
+            }
+          } else if (colIndex - 1 >= 0) {
+            focusTableCell(block._id, rowIndex, colIndex - 1);
+          } else if (rowIndex - 1 >= 0) {
+            focusTableCell(block._id, rowIndex - 1, totalCols - 1);
+          }
+        });
+        cell.appendChild(text);
+
+        if (rowIndex === 0) {
+          var delColBtn = document.createElement('button');
+          delColBtn.type = 'button';
+          delColBtn.className = 'block-table-del-col';
+          delColBtn.title = '刪除這一欄';
+          delColBtn.textContent = '×';
+          delColBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            removeTableColumn(block, colIndex);
+          });
+          cell.appendChild(delColBtn);
+        }
+
         tr.appendChild(cell);
       });
+
+      if (rowIndex === 0) {
+        var addColCell = document.createElement('th');
+        addColCell.className = 'block-table-control-cell';
+        var addColBtn = document.createElement('button');
+        addColBtn.type = 'button';
+        addColBtn.className = 'block-table-add-col';
+        addColBtn.title = '新增一欄';
+        addColBtn.textContent = '+';
+        addColBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          addTableColumn(block);
+        });
+        addColCell.appendChild(addColBtn);
+        tr.appendChild(addColCell);
+      }
+
       tbody.appendChild(tr);
     });
+
+    var addRowTr = document.createElement('tr');
+    var addRowCell = document.createElement('td');
+    addRowCell.className = 'block-table-control-cell block-table-add-row-cell';
+    addRowCell.colSpan = colCount + 2;
+    var addRowBtn = document.createElement('button');
+    addRowBtn.type = 'button';
+    addRowBtn.className = 'block-table-add-row';
+    addRowBtn.title = '新增一列';
+    addRowBtn.textContent = '+ 新增列';
+    addRowBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      addTableRow(block);
+    });
+    addRowCell.appendChild(addRowBtn);
+    addRowTr.appendChild(addRowCell);
+    tbody.appendChild(addRowTr);
 
     table.appendChild(tbody);
     row.appendChild(table);
@@ -370,11 +553,19 @@ window.NotesEditor = (function () {
       optBtn.textContent = opt.label;
       optBtn.addEventListener('click', function (e) {
         e.stopPropagation();
+        var previousText = block.text;
         block.type = opt.type;
         block.level = opt.level;
         closeOpenDropdown();
-        render();
-        focusBlock(block._id, true);
+        if (opt.type === 'table') {
+          block.rows = [[previousText || '', ''], ['', '']];
+          block.align = [null, null];
+          render();
+          focusTableCell(block._id, 0, 0);
+        } else {
+          render();
+          focusBlock(block._id, true);
+        }
         commitChange(true);
       });
       dropdown.appendChild(optBtn);
@@ -416,16 +607,6 @@ window.NotesEditor = (function () {
     var isCtrl = e.ctrlKey || e.metaKey;
     var key = e.key.toLowerCase();
 
-    if (isCtrl && !e.altKey && key === 'z' && !e.shiftKey) {
-      e.preventDefault();
-      undo();
-      return;
-    }
-    if (isCtrl && !e.altKey && ((key === 'z' && e.shiftKey) || key === 'y')) {
-      e.preventDefault();
-      redo();
-      return;
-    }
     if (isCtrl && e.altKey && ['0', '1', '2', '3'].indexOf(e.key) !== -1) {
       e.preventDefault();
       block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
