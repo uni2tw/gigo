@@ -224,6 +224,16 @@ html, body {
   background: var(--hover-bg);
 }
 
+.tree-action-dropdown button:disabled {
+  color: var(--muted-color);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tree-action-dropdown button:disabled:hover {
+  background: none;
+}
+
 .tree-action-dropdown svg {
   flex-shrink: 0;
   color: var(--muted-color);

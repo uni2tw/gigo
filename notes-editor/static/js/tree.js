@@ -7,15 +7,20 @@ window.NotesTree = (function () {
   var expandedPaths = {};
   var openDropdown = null;
 
+  var ICON_NEW_FILE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/></svg>';
   var ICON_RENAME = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
   var ICON_MOVE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a1 1 0 0 1 1-1h4l2 2h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z"/><path d="M9 13h6M12 10l3 3-3 3"/></svg>';
   var ICON_DELETE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
 
-  var NODE_ACTIONS = [
+  var NOTE_ACTIONS = [
     { label: '重新命名', icon: ICON_RENAME, run: 'rename' },
     { label: '搬移', icon: ICON_MOVE, run: 'move' },
     { label: '刪除', icon: ICON_DELETE, run: 'delete' },
   ];
+
+  var FOLDER_ACTIONS = [
+    { label: '新文件', icon: ICON_NEW_FILE, run: 'newNote' },
+  ].concat(NOTE_ACTIONS);
 
   function countNotes(node) {
     var count = 0;
@@ -211,14 +216,23 @@ window.NotesTree = (function () {
     dropdown.className = 'tree-action-dropdown';
     dropdown.hidden = true;
 
-    NODE_ACTIONS.forEach(function (action) {
+    var actions = node.type === 'folder' ? FOLDER_ACTIONS : NOTE_ACTIONS;
+    var blockDelete = node.type === 'folder' && countNotes(node) > 0;
+
+    actions.forEach(function (action) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.innerHTML = action.icon + '<span>' + action.label + '</span>';
+      if (action.run === 'delete' && blockDelete) {
+        btn.disabled = true;
+        btn.title = '資料夾內還有筆記，請先清空才能刪除';
+      }
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
         closeOpenDropdown();
-        if (action.run === 'rename') {
+        if (action.run === 'newNote') {
+          handleNewNote(node);
+        } else if (action.run === 'rename') {
           handleRename(node);
         } else if (action.run === 'move') {
           handleMove(node);
@@ -286,6 +300,22 @@ window.NotesTree = (function () {
       return;
     }
     performMove(sourcePath, newPath);
+  }
+
+  function handleNewNote(node) {
+    window.NotesModal.prompt('新筆記名稱').then(function (name) {
+      if (!name) {
+        return;
+      }
+      window.NotesApi.createNode(node.path, name, 'note')
+        .then(function () {
+          expandedPaths[node.path] = true;
+          window.NotesApp.reloadTree();
+        })
+        .catch(function (err) {
+          window.alert(err.message);
+        });
+    });
   }
 
   function handleRename(node) {
