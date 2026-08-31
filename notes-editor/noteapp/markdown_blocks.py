@@ -10,6 +10,7 @@ _LIST_RE = re.compile(r'^( *)([-*])\s+(.*)$')
 _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
+_FENCE_RE = re.compile(r'^```(\w*)\s*$')
 
 
 def _split_table_row(line):
@@ -54,10 +55,10 @@ class Block(object):
     plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None, src=''):
+                 rows=None, align=None, src='', lang=''):
         self.type = type_
         self.text = text
         self.level = level
@@ -66,6 +67,7 @@ class Block(object):
         self.rows = rows if rows is not None else []
         self.align = align if align is not None else []
         self.src = src
+        self.lang = lang
 
     def to_dict(self):
         return {
@@ -77,6 +79,7 @@ class Block(object):
             'rows': self.rows,
             'align': self.align,
             'src': self.src,
+            'lang': self.lang,
         }
 
     @staticmethod
@@ -89,6 +92,7 @@ class Block(object):
             rows=d.get('rows') or [],
             align=d.get('align') or [],
             src=d.get('src') or '',
+            lang=d.get('lang') or '',
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -118,6 +122,19 @@ def parse_markdown_to_blocks(text):
                 rows.append(_split_table_row(lines[i]))
                 i += 1
             blocks.append(Block('table', rows=rows, align=align))
+            list_stack = []
+            continue
+
+        fence_match = _FENCE_RE.match(raw_line.strip())
+        if fence_match:
+            lang = fence_match.group(1)
+            code_lines = []
+            i += 1
+            while i < n and lines[i].strip() != '```':
+                code_lines.append(lines[i])
+                i += 1
+            i += 1  # skip the closing fence (or run off the end if unterminated)
+            blocks.append(Block('code_block', text='\n'.join(code_lines), lang=lang))
             list_stack = []
             continue
 
@@ -221,6 +238,8 @@ def blocks_to_markdown(blocks):
                 lines.append((' ' * (depth * INDENT_SIZE)) + '- ' + block.text)
             elif block.type == 'image':
                 lines.append('![' + (block.text or '') + '](' + block.src + ')')
+            elif block.type == 'code_block':
+                lines.append('```' + (block.lang or '') + '\n' + block.text + '\n```')
             elif block.type == 'table':
                 rows = block.rows or [['']]
                 col_count = max(len(r) for r in rows)

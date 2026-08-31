@@ -587,6 +587,71 @@ html, body {
   opacity: 1;
 }
 
+.block-row.block-code-row {
+  display: block;
+  padding: 4px 0;
+}
+
+.block-code-wrap {
+  position: relative;
+  background: #1e1e1e;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.block-code-lang {
+  display: block;
+  width: 120px;
+  margin-bottom: 6px;
+  border: none;
+  background: none;
+  color: #9d9d9d;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.block-code-lang::placeholder {
+  color: #6b6f76;
+}
+
+.block-code-textarea {
+  display: block;
+  width: 100%;
+  min-height: 1.5em;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: none;
+  color: #e6e6e6;
+  font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.block-code-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.block-code-wrap:hover .block-code-delete {
+  opacity: 1;
+}
+
 .block-text {
   flex: 1;
   outline: none;

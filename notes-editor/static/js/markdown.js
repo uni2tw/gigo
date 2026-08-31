@@ -8,6 +8,7 @@ window.NotesMarkdown = (function () {
   var TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
   var TABLE_SEP_CELL_RE = /^:?-+:?$/;
   var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
+  var FENCE_RE = /^```(\w*)\s*$/;
 
   function repeatStr(s, n) {
     var out = '';
@@ -90,6 +91,21 @@ window.NotesMarkdown = (function () {
           i += 1;
         }
         blocks.push({ type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align });
+        listStack = [];
+        continue;
+      }
+
+      var fenceMatch = FENCE_RE.exec(rawLine.trim());
+      if (fenceMatch) {
+        var lang = fenceMatch[1];
+        var codeLines = [];
+        i += 1;
+        while (i < n && lines[i].trim() !== '```') {
+          codeLines.push(lines[i]);
+          i += 1;
+        }
+        i += 1; // skip the closing fence (or run off the end if unterminated)
+        blocks.push({ type: 'code_block', level: 0, text: codeLines.join('\n'), lang: lang, children: [], checked: false });
         listStack = [];
         continue;
       }
@@ -216,6 +232,8 @@ window.NotesMarkdown = (function () {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- ' + block.text);
         } else if (block.type === 'image') {
           lines.push('![' + (block.text || '') + '](' + block.src + ')');
+        } else if (block.type === 'code_block') {
+          lines.push('```' + (block.lang || '') + '\n' + block.text + '\n```');
         } else if (block.type === 'table') {
           var rows = (block.rows && block.rows.length) ? block.rows : [['']];
           var colCount = Math.max.apply(null, rows.map(function (r) { return r.length; }));

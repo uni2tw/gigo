@@ -23,6 +23,7 @@ window.NotesEditor = (function () {
     { label: '一般文字', type: 'list_item', level: 0 },
     { label: '表格', type: 'table', level: 0 },
     { label: '插入圖片', type: 'image', level: 0 },
+    { label: '程式碼', type: 'code_block', level: 0 },
   ];
 
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
@@ -169,7 +170,7 @@ window.NotesEditor = (function () {
   // -- Undo / redo history -----------------------------------------------
 
   function snapshotBlocks() {
-    return JSON.stringify(stripInternal(blocks));
+    return JSON.stringify(stripInternal(stripAutoTrailingParagraph(blocks)));
   }
 
   function resetHistory() {
@@ -228,7 +229,7 @@ window.NotesEditor = (function () {
   }
 
   function getBlocks() {
-    return stripInternal(blocks);
+    return stripInternal(stripAutoTrailingParagraph(blocks));
   }
 
   function getMarkdownSource() {
@@ -245,6 +246,7 @@ window.NotesEditor = (function () {
         rows: b.rows || [],
         align: b.align || [],
         src: b.src || '',
+        lang: b.lang || '',
         children: stripInternal(b.children || []),
       };
     });
@@ -297,9 +299,37 @@ window.NotesEditor = (function () {
   }
 
   function render() {
+    ensureTrailingParagraph();
     openDropdown = null;
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
+  }
+
+  function ensureTrailingParagraph() {
+    if (!blocks.length) {
+      return;
+    }
+    var last = blocks[blocks.length - 1];
+    if (NON_TEXT_TYPES.indexOf(last.type) !== -1) {
+      blocks.push({
+        type: 'paragraph', text: '', level: 0, children: [], checked: false,
+        rows: [], align: [], src: '', lang: '', _id: nextId(),
+      });
+    }
+  }
+
+  function stripAutoTrailingParagraph(list) {
+    if (list.length < 2) {
+      return list;
+    }
+    var last = list[list.length - 1];
+    var prev = list[list.length - 2];
+    var isEmptyParagraph = last.type === 'paragraph' && !last.text
+      && (!last.children || last.children.length === 0);
+    if (isEmptyParagraph && NON_TEXT_TYPES.indexOf(prev.type) !== -1) {
+      return list.slice(0, -1);
+    }
+    return list;
   }
 
   function renderList(list) {
@@ -547,6 +577,21 @@ window.NotesEditor = (function () {
     return group;
   }
 
+  var NON_TEXT_TYPES = ['image', 'table', 'code_block'];
+
+  function ensureFollowingParagraph(list, afterIdx) {
+    var next = list[afterIdx + 1];
+    if (next && NON_TEXT_TYPES.indexOf(next.type) === -1) {
+      return next._id;
+    }
+    var newBlock = {
+      type: 'paragraph', text: '', level: 0, children: [], checked: false,
+      rows: [], align: [], src: '', lang: '', _id: nextId(),
+    };
+    list.splice(afterIdx + 1, 0, newBlock);
+    return newBlock._id;
+  }
+
   function insertImageBlockAfter(block, filename) {
     var list = findParentList(blocks, block._id);
     if (!list) {
@@ -555,20 +600,24 @@ window.NotesEditor = (function () {
     var idx = list.indexOf(block);
     var newBlock = {
       type: 'image', text: '', level: 0, children: [], checked: false,
-      rows: [], align: [], src: filename, _id: nextId(),
+      rows: [], align: [], src: filename, lang: '', _id: nextId(),
     };
     list.splice(idx + 1, 0, newBlock);
+    var focusId = ensureFollowingParagraph(list, idx + 1);
     render();
+    focusBlock(focusId, false);
     commitChange(true);
   }
 
   function appendImageBlock(filename) {
     var newBlock = {
       type: 'image', text: '', level: 0, children: [], checked: false,
-      rows: [], align: [], src: filename, _id: nextId(),
+      rows: [], align: [], src: filename, lang: '', _id: nextId(),
     };
     blocks.push(newBlock);
+    var focusId = ensureFollowingParagraph(blocks, blocks.length - 1);
     render();
+    focusBlock(focusId, false);
     commitChange(true);
   }
 
@@ -590,7 +639,11 @@ window.NotesEditor = (function () {
         block.level = 0;
         block.text = previousText || '';
         block.src = result.filename;
+        var list = findParentList(blocks, block._id);
+        var idx = list.indexOf(block);
+        var focusId = ensureFollowingParagraph(list, idx);
         render();
+        focusBlock(focusId, false);
         commitChange(true);
       }).catch(function (err) {
         window.alert('圖片上傳失敗：' + err.message);
@@ -599,7 +652,105 @@ window.NotesEditor = (function () {
     input.click();
   }
 
+  function autoGrowTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  }
+
+  function focusCodeBlock(blockId) {
+    setTimeout(function () {
+      var textarea = container.querySelector('[data-id="' + blockId + '"] .block-code-textarea');
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      var len = textarea.value.length;
+      textarea.setSelectionRange(len, len);
+    }, 0);
+  }
+
+  function renderCodeBlock(block) {
+    var group = document.createElement('div');
+
+    var row = document.createElement('div');
+    row.className = 'block-row block-code-row';
+    row.dataset.id = block._id;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'block-code-wrap';
+
+    var langInput = document.createElement('input');
+    langInput.type = 'text';
+    langInput.className = 'block-code-lang';
+    langInput.placeholder = '語言（選填）';
+    langInput.value = block.lang || '';
+    langInput.addEventListener('input', function () {
+      block.lang = langInput.value;
+      commitChange(false);
+    });
+    wrap.appendChild(langInput);
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'block-code-textarea';
+    textarea.spellcheck = false;
+    textarea.value = block.text || '';
+    textarea.rows = 1;
+    textarea.addEventListener('input', function () {
+      block.text = textarea.value;
+      autoGrowTextarea(textarea);
+      commitChange(false);
+    });
+    textarea.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' && textarea.value === '') {
+        e.preventDefault();
+        removeBlock(block._id);
+        commitChange(true);
+        return;
+      }
+      if (e.key === 'Enter') {
+        var atEnd = textarea.selectionStart === textarea.value.length
+          && textarea.selectionEnd === textarea.value.length;
+        var trailingBlankLine = textarea.value === '' || /\n$/.test(textarea.value);
+        if (atEnd && trailingBlankLine) {
+          e.preventDefault();
+          block.text = textarea.value.replace(/\n$/, '');
+          var list = findParentList(blocks, block._id);
+          var idx = list.indexOf(block);
+          var focusId = ensureFollowingParagraph(list, idx);
+          render();
+          focusBlock(focusId, false);
+          commitChange(true);
+        }
+      }
+    });
+    wrap.appendChild(textarea);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'block-code-delete';
+    delBtn.title = '刪除程式碼區塊';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeBlock(block._id);
+      commitChange(true);
+    });
+    wrap.appendChild(delBtn);
+
+    row.appendChild(wrap);
+    group.appendChild(row);
+
+    setTimeout(function () {
+      autoGrowTextarea(textarea);
+    }, 0);
+
+    return group;
+  }
+
   function renderBlock(block, orderedIndex) {
+    if (block.type === 'code_block') {
+      return renderCodeBlock(block);
+    }
     if (block.type === 'image') {
       return renderImageBlock(block);
     }
@@ -724,6 +875,10 @@ window.NotesEditor = (function () {
           block.align = [null, null];
           render();
           focusTableCell(block._id, 0, 0);
+        } else if (opt.type === 'code_block') {
+          block.lang = block.lang || '';
+          render();
+          focusCodeBlock(block._id);
         } else {
           render();
           focusBlock(block._id, true);

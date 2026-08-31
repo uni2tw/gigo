@@ -191,6 +191,43 @@ class MarkdownBlocksTests(unittest.TestCase):
         blocks = parse_markdown_to_blocks('see ![a photo](photo.png) above\n')
         self.assertEqual(blocks[0].type, 'paragraph')
 
+    def test_code_block_with_language(self):
+        text = '```python\nprint(1)\nif True:\n    print(2)\n```\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'code_block')
+        self.assertEqual(blocks[0].lang, 'python')
+        self.assertEqual(blocks[0].text, 'print(1)\nif True:\n    print(2)')
+
+    def test_code_block_without_language(self):
+        blocks = parse_markdown_to_blocks('```\nhello\n```\n')
+        self.assertEqual(blocks[0].type, 'code_block')
+        self.assertEqual(blocks[0].lang, '')
+        self.assertEqual(blocks[0].text, 'hello')
+
+    def test_code_block_empty(self):
+        blocks = parse_markdown_to_blocks('```\n```\n')
+        self.assertEqual(blocks[0].type, 'code_block')
+        self.assertEqual(blocks[0].text, '')
+
+    def test_code_block_unterminated_runs_to_end_of_file(self):
+        blocks = parse_markdown_to_blocks('```python\nline1\nline2')
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].type, 'code_block')
+        self.assertEqual(blocks[0].text, 'line1\nline2')
+
+    def test_code_block_content_not_reparsed_as_other_syntax(self):
+        text = '```\n# not a heading\n- not a list\n```\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].type, 'code_block')
+        self.assertEqual(blocks[0].text, '# not a heading\n- not a list')
+
+    def test_code_block_round_trip(self):
+        text = '# Title\n```python\nprint(1)\nif True:\n    print(2)\n```\n- item\n'
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        self.assertEqual(serialized, text)
+
 
 if __name__ == '__main__':
     unittest.main()
