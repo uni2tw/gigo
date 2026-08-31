@@ -669,6 +669,30 @@ window.NotesEditor = (function () {
     }, 0);
   }
 
+  var CODE_LANGUAGES = [
+    { value: '', label: '純文字' },
+    { value: 'javascript', label: 'JavaScript' },
+    { value: 'typescript', label: 'TypeScript' },
+    { value: 'python', label: 'Python' },
+    { value: 'java', label: 'Java' },
+    { value: 'csharp', label: 'C#' },
+    { value: 'cpp', label: 'C++' },
+    { value: 'c', label: 'C' },
+    { value: 'go', label: 'Go' },
+    { value: 'rust', label: 'Rust' },
+    { value: 'php', label: 'PHP' },
+    { value: 'ruby', label: 'Ruby' },
+    { value: 'sql', label: 'SQL' },
+    { value: 'html', label: 'HTML' },
+    { value: 'css', label: 'CSS' },
+    { value: 'json', label: 'JSON' },
+    { value: 'yaml', label: 'YAML' },
+    { value: 'bash', label: 'Bash' },
+    { value: 'powershell', label: 'PowerShell' },
+    { value: 'markdown', label: 'Markdown' },
+    { value: 'xml', label: 'XML' },
+  ];
+
   function renderCodeBlock(block) {
     var group = document.createElement('div');
 
@@ -679,16 +703,26 @@ window.NotesEditor = (function () {
     var wrap = document.createElement('div');
     wrap.className = 'block-code-wrap';
 
-    var langInput = document.createElement('input');
-    langInput.type = 'text';
-    langInput.className = 'block-code-lang';
-    langInput.placeholder = '語言（選填）';
-    langInput.value = block.lang || '';
-    langInput.addEventListener('input', function () {
-      block.lang = langInput.value;
-      commitChange(false);
+    var currentLang = block.lang || '';
+    var langOptions = CODE_LANGUAGES.some(function (l) { return l.value === currentLang; })
+      ? CODE_LANGUAGES
+      : CODE_LANGUAGES.concat([{ value: currentLang, label: currentLang }]);
+
+    var langSelect = document.createElement('select');
+    langSelect.className = 'block-code-lang';
+    langSelect.title = '程式語言';
+    langOptions.forEach(function (l) {
+      var opt = document.createElement('option');
+      opt.value = l.value;
+      opt.textContent = l.label;
+      langSelect.appendChild(opt);
     });
-    wrap.appendChild(langInput);
+    langSelect.value = currentLang;
+    langSelect.addEventListener('change', function () {
+      block.lang = langSelect.value;
+      commitChange(true);
+    });
+    wrap.appendChild(langSelect);
 
     var textarea = document.createElement('textarea');
     textarea.className = 'block-code-textarea';
