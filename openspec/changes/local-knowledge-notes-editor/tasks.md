@@ -248,3 +248,19 @@
 - [x] 33.3 `renderActionMenu` 用既有的 `countNotes(node)`（跟資料夾筆記數徽章同一個遞迴計數函式）判斷資料夾底下（含子資料夾）是否還有筆記，有則把刪除按鈕設為 `disabled` 並加上提示文字；僅為選單層級的防呆，後端 `DELETE` API 語意不變，仍支援連同子節點一起刪除
 - [x] 33.4 以隔離測試伺服器驗證：含筆記的資料夾選單第一項為「新文件」、「刪除」為 disabled 且點擊無反應；空資料夾「刪除」可點擊；對空資料夾用「新文件」新增筆記後自動展開、檔案正確建立，該資料夾的「刪除」隨即變為 disabled；筆記節點選單只有三項、無「新文件」、「刪除」維持可點擊；主控台無錯誤，Python 測試 36 個維持通過
 - [x] 33.5 README 補充資料夾操作選單新增項目與刪除反灰條件的說明
+
+## 34. 樹狀節點圖示改用可套色的 SVG（資料夾／筆記加橘色）
+
+- [x] 34.1 排查「加 `color: orange` 沒有用」：📁／📄 是全彩表情符號，多數平台表情符號字型內建配色會忽略 CSS `color`，屬於網頁平台限制
+- [x] 34.2 新增 `ICON_FOLDER`／`ICON_NOTE` 單色線條 SVG 常數（`stroke="currentColor"`，比照既有「⋮」選單圖示做法），`renderNode` 改用 `icon.innerHTML` 換上對應 SVG，取代原本的表情符號 `textContent`
+- [x] 34.3 `.tree-node-icon` CSS 加上 `color: #e08a3c`，資料夾與筆記節點共用同一個橘色
+- [x] 34.4 以隔離測試伺服器驗證：兩種節點圖示皆換成 SVG、`getComputedStyle` 的 `color` 為 `rgb(224, 138, 60)`；主控台無錯誤；Python 測試 36 個維持通過
+
+## 35. 全面排查並移除其餘的表情符號圖示（Win7／舊瀏覽器相容性）
+
+- [x] 35.1 使用者追問「新增資料夾／新增筆記」按鈕（`📁+`／`📄+`）是否也有同樣風險，確認是——`templates/index.html` 改成內嵌 SVG（folder 用 `ICON_FOLDER` 加「+」線條、note 沿用 `ICON_NEW_FILE`），`#sidebar-actions button` CSS 加 `color: #e08a3c` 並改為 flex 置中
+- [x] 35.2 用 Python 腳本（Unicode 表情符號區段正規表示式）掃描 `static/js/`／`templates/` 全部檔案，抓到另一個殘留：浮動行內格式工具列「連結」按鈕的 `🔗`
+- [x] 35.3 新增 `ICON_LINK`，`INLINE_BUTTONS` 的連結項目改用 `icon` 欄位；渲染迴圈改成「有 `icon` 用 `innerHTML`、否則維持 `textContent`」（保留兩種路徑是因為同清單裡 `</>` 是純文字字面，用 `innerHTML` 會被當成標籤解析掉）
+- [x] 35.4 再次掃描確認 `static/js/`／`templates/` 已無任何表情符號字元
+- [x] 35.5 以隔離測試伺服器驗證：兩個工具列按鈕正確顯示 SVG、套色、點擊仍可正常新增資料夾/筆記；連結按鈕（用 `title` 精準定位，避免跟字級選單的索引搞混）點擊後正確跳出網址輸入框並套用連結；主控台無錯誤，Python 測試 36 個維持通過
+- [x] 35.6 README 的 Windows 7 相容性章節補充：所有圖示皆為手繪 SVG、不使用任何表情符號

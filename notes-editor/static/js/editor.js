@@ -22,12 +22,14 @@ window.NotesEditor = (function () {
     { label: '表格', type: 'table', level: 0 },
   ];
 
+  var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
+
   var INLINE_BUTTONS = [
     { label: 'B', cmd: 'bold', title: '粗體', style: 'font-weight:700;' },
     { label: 'I', cmd: 'italic', title: '斜體', style: 'font-style:italic;' },
     { label: 'S', cmd: 'strikeThrough', title: '刪除線', style: 'text-decoration:line-through;' },
     { label: '</>', cmd: 'code', title: '行內程式碼', style: 'font-family:monospace;' },
-    { label: '🔗', cmd: 'link', title: '連結', style: '' },
+    { icon: ICON_LINK, cmd: 'link', title: '連結', style: '' },
   ];
 
   var FONT_SIZE_OPTIONS = [
@@ -1035,7 +1037,11 @@ window.NotesEditor = (function () {
       btn.type = 'button';
       btn.className = 'inline-toolbar-btn';
       btn.style.cssText = b.style;
-      btn.textContent = b.label;
+      if (b.icon) {
+        btn.innerHTML = b.icon;
+      } else {
+        btn.textContent = b.label;
+      }
       btn.title = b.title;
       btn.addEventListener('mousedown', function (e) {
         e.preventDefault();

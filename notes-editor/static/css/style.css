@@ -54,11 +54,13 @@ html, body {
 }
 
 #sidebar-actions button {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 14px;
-  padding: 2px 4px;
+  color: #e08a3c;
+  padding: 4px;
   border-radius: 4px;
 }
 
@@ -119,7 +121,10 @@ html, body {
 }
 
 .tree-node-icon {
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  color: #e08a3c;
+  flex-shrink: 0;
 }
 
 .tree-node-label {
@@ -714,6 +719,9 @@ html, body {
 }
 
 .inline-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 28px;
   height: 28px;
   padding: 0 6px;
