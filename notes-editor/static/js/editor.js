@@ -2,6 +2,8 @@ window.NotesEditor = (function () {
   var container = null;
   var blocks = [];
   var onChange = null;
+  var onImageUpload = null;
+  var imageBaseDir = '';
   var idCounter = 0;
   var openDropdown = null;
   var floatingToolbar = null;
@@ -20,6 +22,7 @@ window.NotesEditor = (function () {
     { label: '待辦清單', type: 'checklist_item', level: 0 },
     { label: '一般文字', type: 'list_item', level: 0 },
     { label: '表格', type: 'table', level: 0 },
+    { label: '插入圖片', type: 'image', level: 0 },
   ];
 
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
@@ -55,6 +58,7 @@ window.NotesEditor = (function () {
   function init(containerEl, callbacks) {
     container = containerEl;
     onChange = (callbacks && callbacks.onChange) || function () {};
+    onImageUpload = (callbacks && callbacks.onImageUpload) || null;
     document.addEventListener('click', function () {
       closeOpenDropdown();
     });
@@ -79,6 +83,68 @@ window.NotesEditor = (function () {
         redo();
       }
     });
+
+    container.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      var imageItem = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          imageItem = items[i];
+          break;
+        }
+      }
+      if (!imageItem || !onImageUpload) {
+        return;
+      }
+      var textEl = findBlockTextAncestor(document.activeElement);
+      if (!textEl || !container.contains(textEl)) {
+        return;
+      }
+      var rowEl = textEl.closest('[data-id]');
+      var block = rowEl && findBlock(blocks, rowEl.dataset.id);
+      if (!block) {
+        return;
+      }
+      e.preventDefault();
+      var file = imageItem.getAsFile();
+      if (!file) {
+        return;
+      }
+      onImageUpload(file).then(function (result) {
+        insertImageBlockAfter(block, result.filename);
+      }).catch(function (err) {
+        window.alert('圖片上傳失敗：' + err.message);
+      });
+    });
+
+    container.addEventListener('dragover', function (e) {
+      if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    container.addEventListener('drop', function (e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length || !onImageUpload) {
+        return;
+      }
+      var imageFile = null;
+      for (var i = 0; i < files.length; i++) {
+        if (files[i].type && files[i].type.indexOf('image/') === 0) {
+          imageFile = files[i];
+          break;
+        }
+      }
+      if (!imageFile) {
+        return;
+      }
+      e.preventDefault();
+      onImageUpload(imageFile).then(function (result) {
+        appendImageBlock(result.filename);
+      }).catch(function (err) {
+        window.alert('圖片上傳失敗：' + err.message);
+      });
+    });
   }
 
   function setFromPlainBlocks(plainBlocks) {
@@ -89,7 +155,8 @@ window.NotesEditor = (function () {
     render();
   }
 
-  function load(newBlocks) {
+  function load(newBlocks, baseDir) {
+    imageBaseDir = baseDir || '';
     setFromPlainBlocks(newBlocks);
     resetHistory();
   }
@@ -177,6 +244,7 @@ window.NotesEditor = (function () {
         checked: !!b.checked,
         rows: b.rows || [],
         align: b.align || [],
+        src: b.src || '',
         children: stripInternal(b.children || []),
       };
     });
@@ -446,7 +514,95 @@ window.NotesEditor = (function () {
     return group;
   }
 
+  function renderImageBlock(block) {
+    var group = document.createElement('div');
+
+    var row = document.createElement('div');
+    row.className = 'block-row block-image-row';
+    row.dataset.id = block._id;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'block-image-wrap';
+
+    var img = document.createElement('img');
+    img.className = 'block-image';
+    img.src = window.NotesApi.fileUrl(imageBaseDir ? imageBaseDir + '/' + block.src : block.src);
+    img.alt = block.text || '';
+    wrap.appendChild(img);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'block-image-delete';
+    delBtn.title = '刪除圖片';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeBlock(block._id);
+      commitChange(true);
+    });
+    wrap.appendChild(delBtn);
+
+    row.appendChild(wrap);
+    group.appendChild(row);
+    return group;
+  }
+
+  function insertImageBlockAfter(block, filename) {
+    var list = findParentList(blocks, block._id);
+    if (!list) {
+      return;
+    }
+    var idx = list.indexOf(block);
+    var newBlock = {
+      type: 'image', text: '', level: 0, children: [], checked: false,
+      rows: [], align: [], src: filename, _id: nextId(),
+    };
+    list.splice(idx + 1, 0, newBlock);
+    render();
+    commitChange(true);
+  }
+
+  function appendImageBlock(filename) {
+    var newBlock = {
+      type: 'image', text: '', level: 0, children: [], checked: false,
+      rows: [], align: [], src: filename, _id: nextId(),
+    };
+    blocks.push(newBlock);
+    render();
+    commitChange(true);
+  }
+
+  function promptInsertImage(block) {
+    if (!onImageUpload) {
+      return;
+    }
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/gif,image/webp';
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      if (!file) {
+        return;
+      }
+      var previousText = block.text;
+      onImageUpload(file).then(function (result) {
+        block.type = 'image';
+        block.level = 0;
+        block.text = previousText || '';
+        block.src = result.filename;
+        render();
+        commitChange(true);
+      }).catch(function (err) {
+        window.alert('圖片上傳失敗：' + err.message);
+      });
+    });
+    input.click();
+  }
+
   function renderBlock(block, orderedIndex) {
+    if (block.type === 'image') {
+      return renderImageBlock(block);
+    }
     if (block.type === 'table') {
       return renderTableBlock(block);
     }
@@ -555,10 +711,14 @@ window.NotesEditor = (function () {
       optBtn.textContent = opt.label;
       optBtn.addEventListener('click', function (e) {
         e.stopPropagation();
+        closeOpenDropdown();
+        if (opt.type === 'image') {
+          promptInsertImage(block);
+          return;
+        }
         var previousText = block.text;
         block.type = opt.type;
         block.level = opt.level;
-        closeOpenDropdown();
         if (opt.type === 'table') {
           block.rows = [[previousText || '', ''], ['', '']];
           block.align = [null, null];

@@ -169,6 +169,28 @@ class MarkdownBlocksTests(unittest.TestCase):
         serialized = blocks_to_markdown([block])
         self.assertEqual(serialized, '| a | b |\n| --- | --- |\n| 1 |  |\n')
 
+    def test_image_basic_parse(self):
+        blocks = parse_markdown_to_blocks('![a photo](photo.png)\n')
+        self.assertEqual(blocks[0].type, 'image')
+        self.assertEqual(blocks[0].text, 'a photo')
+        self.assertEqual(blocks[0].src, 'photo.png')
+
+    def test_image_empty_alt(self):
+        blocks = parse_markdown_to_blocks('![](photo.png)\n')
+        self.assertEqual(blocks[0].type, 'image')
+        self.assertEqual(blocks[0].text, '')
+        self.assertEqual(blocks[0].src, 'photo.png')
+
+    def test_image_round_trip(self):
+        text = '# Title\n![a photo](photo.png)\n- item\n'
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        self.assertEqual(serialized, text)
+
+    def test_image_line_with_extra_text_is_not_an_image_block(self):
+        blocks = parse_markdown_to_blocks('see ![a photo](photo.png) above\n')
+        self.assertEqual(blocks[0].type, 'paragraph')
+
 
 if __name__ == '__main__':
     unittest.main()

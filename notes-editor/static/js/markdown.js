@@ -7,6 +7,7 @@ window.NotesMarkdown = (function () {
   var LIST_RE = /^( *)([-*])\s+(.*)$/;
   var TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
   var TABLE_SEP_CELL_RE = /^:?-+:?$/;
+  var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
 
   function repeatStr(s, n) {
     var out = '';
@@ -90,6 +91,14 @@ window.NotesMarkdown = (function () {
         }
         blocks.push({ type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align });
         listStack = [];
+        continue;
+      }
+
+      var imageMatch = IMAGE_RE.exec(rawLine.trim());
+      if (imageMatch) {
+        blocks.push({ type: 'image', level: 0, text: imageMatch[1], src: imageMatch[2], children: [], checked: false });
+        listStack = [];
+        i += 1;
         continue;
       }
 
@@ -205,6 +214,8 @@ window.NotesMarkdown = (function () {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- [' + (block.checked ? 'x' : ' ') + '] ' + block.text);
         } else if (block.type === 'list_item') {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- ' + block.text);
+        } else if (block.type === 'image') {
+          lines.push('![' + (block.text || '') + '](' + block.src + ')');
         } else if (block.type === 'table') {
           var rows = (block.rows && block.rows.length) ? block.rows : [['']];
           var colCount = Math.max.apply(null, rows.map(function (r) { return r.length; }));

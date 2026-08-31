@@ -264,3 +264,18 @@
 - [x] 35.4 再次掃描確認 `static/js/`／`templates/` 已無任何表情符號字元
 - [x] 35.5 以隔離測試伺服器驗證：兩個工具列按鈕正確顯示 SVG、套色、點擊仍可正常新增資料夾/筆記；連結按鈕（用 `title` 精準定位，避免跟字級選單的索引搞混）點擊後正確跳出網址輸入框並套用連結；主控台無錯誤，Python 測試 36 個維持通過
 - [x] 35.6 README 的 Windows 7 相容性章節補充：所有圖示皆為手繪 SVG、不使用任何表情符號
+
+## 36. 插入圖片
+
+- [x] 36.1 與使用者討論插入手勢（貼上／拖放／格式選單，三者皆採用）與儲存位置（共用資料夾 vs 每篇筆記附屬資料夾 vs 跟 md 同目錄，使用者選同目錄）；確認檔名衝突後蓋前、副檔名白名單、10MB 上限、後端 API 交由我設計；記錄使用者提出但明確表示這次不做的未來規劃（搬移/刪除含圖片筆記時跳出確認提示）
+- [x] 36.2 `Block`（Python／JS）新增 `src` 欄位；parser 新增整行 `![alt](檔名)` 偵測為圖片區塊（`_IMAGE_RE`／`IMAGE_RE`），行內夾雜文字時仍當一般段落；serializer 對應輸出
+- [x] 36.3 後端新增 `POST /api/notes/<note_path>/images`（multipart 上傳，存到筆記同資料夾，檔名衝突直接覆蓋）與 `GET /api/files/<path:rel_path>`（沿用 `resolve_safe_path` 讀取任意檔案）；新增 `_safe_upload_filename`（只取 basename，保留中文檔名，不用會過濾非 ASCII 的 `secure_filename`）；副檔名白名單、10MB 上限（讀 `file.stream` 實際大小，不信任 `Content-Length`）
+- [x] 36.4 `editor.js` 新增 `imageBaseDir` 模組狀態（`load(blocks, baseDir)` 帶入），圖片顯示網址由前端組出（`NotesApi.fileUrl(imageBaseDir + '/' + block.src)`），`.md` 檔案裡的 `src` 維持純檔名不含路徑，保持可攜性
+- [x] 36.5 貼上：`container` 掛 `paste` 監聽器偵測 `clipboardData.items` 的 `image/*`，上傳後在目前區塊**之後**插入新圖片區塊（`insertImageBlockAfter`），原區塊文字不變
+- [x] 36.6 拖放：`container` 掛 `drop` 監聽器偵測 `dataTransfer.files`（與樹狀索引內部搬移節點用的 `text/plain` 資料管道不同，互不干擾），上傳後固定加在筆記最後（`appendImageBlock`）
+- [x] 36.7 格式選單新增「插入圖片」，點擊後動態建立 `<input type="file">` 觸發選檔（`promptInsertImage`），只有選檔且上傳成功後才把區塊轉成 `type:'image'`，原有文字保留為 `alt`；取消選檔不影響原區塊
+- [x] 36.8 圖片區塊渲染比照表格區塊，不走一般區塊的格式鈕/摺疊箭頭/標記；hover 顯示「×」呼叫既有 `removeBlock` 刪除區塊，不刪除磁碟上的圖片檔案
+- [x] 36.9 `api.js` 新增 `uploadImage`／`fileUrl`；`stripInternal` 加上 `src` 避免存檔/復原時遺失
+- [x] 36.10 Python 測試新增圖片 parser/serializer round-trip（4 個）與 API 上傳測試（子資料夾、副檔名白名單、10MB 上限、覆蓋既有檔案、檔名路徑穿越、讀取端點路徑逃逸，共 7 個），全部 47 個測試維持通過
+- [x] 36.11 以隔離測試伺服器（含中文子資料夾）驗證三種插入手勢：格式選單（攔截動態 file input 的 `click()`，用 `DataTransfer` 模擬選檔）、貼上（`ClipboardEvent`）、拖放（`DragEvent`）皆正確上傳、正確插入/轉換區塊、`<img>` 實際載入成功（`naturalWidth` 非 0）、中文路徑正確 `encodeURIComponent`；重新整理頁面後正確重新解析；刪除區塊不影響磁碟檔案；不支援副檔名被伺服器正確拒絕；主控台無錯誤
+- [x] 36.12 README 補充插入圖片的三種手勢、儲存位置、限制與已知限制（搬移/刪除不處理圖片，未來規劃見 design.md）

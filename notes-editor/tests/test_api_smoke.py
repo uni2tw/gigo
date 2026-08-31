@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import tempfile
@@ -60,6 +61,89 @@ class ApiSmokeTests(unittest.TestCase):
     def test_read_missing_note_returns_404(self):
         resp = self.client.get('/api/notes/missing.md')
         self.assertEqual(resp.status_code, 404)
+
+    def test_upload_image_saved_next_to_note_and_served_back(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+
+        resp = self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(b'\x89PNG fake bytes'), 'photo.png')},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.get_json()['filename'], 'photo.png')
+        self.assertTrue(os.path.isfile(os.path.join(self.notes_root, 'photo.png')))
+
+        resp = self.client.get('/api/files/photo.png')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, b'\x89PNG fake bytes')
+        resp.close()
+
+    def test_upload_image_into_subfolder_note(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'folderA', 'type': 'folder'})
+        self.client.post('/api/nodes', json={'parent': 'folderA', 'name': 'note1', 'type': 'note'})
+
+        resp = self.client.post(
+            '/api/notes/folderA/note1.md/images',
+            data={'file': (io.BytesIO(b'data'), 'photo.png')},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertTrue(os.path.isfile(os.path.join(self.notes_root, 'folderA', 'photo.png')))
+
+        resp = self.client.get('/api/files/folderA/photo.png')
+        self.assertEqual(resp.status_code, 200)
+        resp.close()
+
+    def test_upload_image_rejects_unsupported_extension(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        resp = self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(b'not an image'), 'notes.txt')},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_upload_image_rejects_oversized_file(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        oversized = b'x' * (10 * 1024 * 1024 + 1)
+        resp = self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(oversized), 'big.png')},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_upload_image_overwrites_same_filename(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(b'first'), 'photo.png')},
+            content_type='multipart/form-data',
+        )
+        self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(b'second'), 'photo.png')},
+            content_type='multipart/form-data',
+        )
+        with open(os.path.join(self.notes_root, 'photo.png'), 'rb') as f:
+            self.assertEqual(f.read(), b'second')
+
+    def test_upload_image_filename_path_traversal_is_stripped(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        resp = self.client.post(
+            '/api/notes/note1.md/images',
+            data={'file': (io.BytesIO(b'data'), '../../evil.png')},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.get_json()['filename'], 'evil.png')
+        self.assertTrue(os.path.isfile(os.path.join(self.notes_root, 'evil.png')))
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.notes_root), 'evil.png')))
+
+    def test_get_file_path_escape_rejected(self):
+        resp = self.client.get('/api/files/../outside.png')
+        self.assertIn(resp.status_code, (400, 404))
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ _ORDERED_RE = re.compile(r'^( *)(\d+)\.\s+(.*)$')
 _LIST_RE = re.compile(r'^( *)([-*])\s+(.*)$')
 _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
+_IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
 
 
 def _split_table_row(line):
@@ -45,18 +46,18 @@ def _parse_table_align(sep_cells):
 
 class Block(object):
     """A single outline block: a heading, quote, list item (bullet / ordered /
-    checklist), table, or a plain paragraph.
+    checklist), table, image, or a plain paragraph.
 
     Only `list_item`, `ordered_item`, and `checklist_item` blocks may have
     children (nested outline levels); the tree serializes to/from a subset
-    of Markdown (headings, block quotes, nested lists, tables, and plain
-    paragraph lines).
+    of Markdown (headings, block quotes, nested lists, tables, images, and
+    plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None):
+                 rows=None, align=None, src=''):
         self.type = type_
         self.text = text
         self.level = level
@@ -64,6 +65,7 @@ class Block(object):
         self.checked = checked
         self.rows = rows if rows is not None else []
         self.align = align if align is not None else []
+        self.src = src
 
     def to_dict(self):
         return {
@@ -74,6 +76,7 @@ class Block(object):
             'checked': self.checked,
             'rows': self.rows,
             'align': self.align,
+            'src': self.src,
         }
 
     @staticmethod
@@ -85,6 +88,7 @@ class Block(object):
             checked=bool(d.get('checked', False)),
             rows=d.get('rows') or [],
             align=d.get('align') or [],
+            src=d.get('src') or '',
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -115,6 +119,13 @@ def parse_markdown_to_blocks(text):
                 i += 1
             blocks.append(Block('table', rows=rows, align=align))
             list_stack = []
+            continue
+
+        image_match = _IMAGE_RE.match(raw_line.strip())
+        if image_match:
+            blocks.append(Block('image', text=image_match.group(1), src=image_match.group(2)))
+            list_stack = []
+            i += 1
             continue
 
         heading_match = _HEADING_RE.match(raw_line)
@@ -208,6 +219,8 @@ def blocks_to_markdown(blocks):
                 lines.append((' ' * (depth * INDENT_SIZE)) + '- [%s] ' % mark + block.text)
             elif block.type == 'list_item':
                 lines.append((' ' * (depth * INDENT_SIZE)) + '- ' + block.text)
+            elif block.type == 'image':
+                lines.append('![' + (block.text or '') + '](' + block.src + ')')
             elif block.type == 'table':
                 rows = block.rows or [['']]
                 col_count = max(len(r) for r in rows)

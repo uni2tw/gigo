@@ -53,6 +53,19 @@ window.NotesApi = (function () {
     });
   }
 
+  function uploadImage(notePath, file) {
+    var formData = new FormData();
+    formData.append('file', file);
+    return request('/api/notes/' + encodeURI(notePath) + '/images', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  function fileUrl(relPath) {
+    return '/api/files/' + relPath.split('/').map(encodeURIComponent).join('/');
+  }
+
   return {
     getTree: getTree,
     createNode: createNode,
@@ -60,5 +73,7 @@ window.NotesApi = (function () {
     deleteNode: deleteNode,
     getNote: getNote,
     saveNote: saveNote,
+    uploadImage: uploadImage,
+    fileUrl: fileUrl,
   };
 })();

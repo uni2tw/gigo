@@ -345,6 +345,28 @@ Ctrl+Z／Tab 這兩個鍵盤快捷鍵在這次測試環境裡透過自動化工�
 藉這個機會用 Python 腳本（`re.compile('[\U0001F300-\U0001FAFF☀-➿]')`）掃描整個 `static/js/` 與 `templates/` 底下所有檔案，確認還有沒有其他殘留的表情符號——結果又抓到一個先前沒注意到的：浮動行內格式工具列的「連結」按鈕（`INLINE_BUTTONS` 裡的 `🔗`）。一併修掉：新增 `ICON_LINK`（雙環鎖鏈線條圖示），`INLINE_BUTTONS` 該項目的 `label: '🔗'` 改成 `icon: ICON_LINK`；渲染迴圈（原本一律 `btn.textContent = b.label`）改成「有 `icon` 欄位就用 `innerHTML`、否則維持 `textContent`」，因為同一份清單裡其他按鈕（`B`／`I`／`S`／`</>`）本來就是純文字字元、不需要也不應該被當成 HTML 解析（`</>` 這個字面文字如果誤用 `innerHTML` 會被瀏覽器當成標籤語法解析、直接消失，所以刻意保留兩種渲染路徑並用 `b.icon` 是否存在來切換，而不是把全部按鈕都改成 `innerHTML`）。修完之後整個 `static/js/` 與 `templates/` 底下已確認不再含有任何表情符號字元，圖示全數為手繪 SVG。
 
 已用隔離測試伺服器驗證：「新增資料夾」「新增筆記」兩個按鈕的 `innerHTML` 都是 SVG、`color` 皆為 `rgb(224, 138, 60)`，點擊仍可正常開啟新增資料夾/筆記的對話框並成功建立；浮動工具列的「連結」按鈕（用 `title` 屬性精準定位，避免跟字級選單按鈕的索引搞混——這正是我自己第一次測試時犯的錯，把字級選單也算進 `.inline-toolbar-btn` 的索引，點到「行內程式碼」按鈕而非「連結」按鈕）點擊後正確跳出既有的 `NotesModal.prompt` 網址輸入框，輸入網址送出後正確在選取文字外包上 `<a href="...">`；瀏覽器主控台全程無錯誤；Python 測試 36 個維持通過（純前端改動）。README 補充 Windows 7 相容性章節，說明所有圖示皆為手繪 SVG、不使用任何表情符號。
+
+### 插入圖片
+使用者請我先研究「以現有介面來說要怎麼擴充插入圖片」，並問圖片該存在共用目錄還是各自目錄。研究後提出三個插入手勢（貼上、拖放、格式選單）與三種儲存位置（共用資料夾、每篇筆記各自附屬資料夾、跟 md 同目錄）的取捨；使用者確認：插入手勢與圖片獨立成一個區塊型態都照建議做，但儲存位置最後選「跟 md 檔同目錄，不建立額外資料夾」（比我原本建議的「每篇筆記各自 `.assets/` 資料夾」更簡單）；檔名衝突「後蓋前，使用者自行負責」；限制副檔名與 10MB 大小上限；後端 API 怎麼設計交給我決定。確認方向後，使用者接著想到兩個因「同目錄、不建立資料夾」才會發生的新問題：搬移筆記到別的資料夾時圖片不會跟著搬（參考會失效）、刪除筆記不會一併刪除同目錄圖片（可能被其他筆記共用，無法確定），並提出「未來要做：搬移/刪除有圖片時跳出確認提示（沒得選、只能繼續或取消）」，但明確表示**這次不用實作**，先記錄下來。
+
+**資料模型**：`Block` 新增 `src` 欄位（Python／JS 兩邊比照 `rows`/`align` 的模式）。Parser 新增 `_IMAGE_RE`（`^!\[([^\]]*)\]\(([^)\s]+)\)$`），一整行**只有**一個 `![alt](檔名)`、沒有其他文字時才視為圖片區塊（避免段落文字中間夾雜的圖片語法被誤判，那種情況維持當作一般段落文字，這部分暫不支援行內圖片）；serializer 對應輸出 `![alt](src)`。
+
+**儲存路徑設計**：關鍵決定是「.md 檔案裡存的內容」跟「瀏覽器顯示圖片用的網址」要分開處理，兩邊各自簡單：
+- **持久化格式**：`block.src` 就是不含路徑的純檔名（例如 `photo.png`），Python／JS 的 parser／serializer 完全不用處理任何路徑運算，跟其他欄位（`text`、`rows`）對稱處理——這樣 `.md` 檔案本身維持可攜性，複製整個資料夾到別的地方，圖片連結依然有效，不會因為換了機器/路徑而失效。
+- **顯示網址**：由前端負責組出可以載入的網址。`app.js` 在 `selectNode()` 呼叫 `NotesEditor.load(data.blocks, parentDirOf(node.path))` 多帶一個「目前筆記所在資料夾」的參數，`editor.js` 存成模組層級的 `imageBaseDir`；渲染圖片區塊時用 `window.NotesApi.fileUrl(imageBaseDir + '/' + block.src)` 組出 `/api/files/<路徑>` 這種可以直接 fetch 的網址。這個關聯只在瀏覽器執行期間存在，不會寫回 `.md` 檔案。
+
+**後端**：新增 `POST /api/notes/<note_path>/images`（multipart 上傳）與 `GET /api/files/<path:rel_path>`（讀取任意檔案，沿用既有的 `resolve_safe_path` 做路徑安全檢查，用 Flask `send_file` 回傳）。上傳檔名處理**沒有**用 werkzeug 的 `secure_filename`——那個函式會把非 ASCII 字元（中文檔名）整個過濾掉或轉成底線，對這個中文為主的 App 不合適；改寫一個簡單的 `_safe_upload_filename`：只取 `os.path.basename()`（防止檔名帶路徑分隔符逃逸）、拒絕空字串/`.`/`..`/含 null byte，中文檔名可以完整保留。副檔名白名單 `{'.png','.jpg','.jpeg','.gif','.webp'}`、大小上限 `10 * 1024 * 1024`（讀取 `file.stream` 的 seek/tell 取得實際大小，不信任 `Content-Length` 表頭）。檔名衝突比照使用者要求，直接覆蓋、不做任何自動重新命名。
+
+**前端插入流程**：三種手勢共用同一個 `onImageUpload(file)` callback（`init()` 時由 `app.js` 傳入，內部呼叫 `NotesApi.uploadImage(currentNode.path, file)`），editor.js 本身不知道目前是哪一篇筆記、也不直接碰 API，維持原本「泛用區塊樹編輯器」的角色分離：
+- **貼上**：`container` 上掛一個 `paste` 監聽器（而非每個區塊各自掛），檢查 `clipboardData.items` 有沒有 `image/*` 類型；找到就用 `document.activeElement` 反查目前是哪個區塊（`findBlockTextAncestor`），上傳成功後呼叫 `insertImageBlockAfter(block, filename)`，在該區塊**之後**插入新的圖片區塊、原區塊文字不受影響（不是把目前區塊直接轉成圖片，因為貼上圖片時使用者通常還在打字，不是想把已經打的內容整個換掉）。
+- **拖放**：同樣掛在 `container` 上，檢查 `dataTransfer.files`（外部檔案拖放用這個，跟樹狀索引內部搬移節點用的 `dataTransfer.setData('text/plain', path)` 是不同的資料管道，兩者不會互相干擾）；找到圖片檔案就上傳，成功後呼叫 `appendImageBlock(filename)`，固定加在筆記最後（沒有做「依放開座標找最近的區塊插入」這種精準定位，先求簡單）。
+- **格式選單插入圖片**：`FORMAT_OPTIONS` 加一個「插入圖片」選項，但**不能**沿用其他選項「點了就直接把 `block.type` 設成目標型態」的既有邏輯——因為使用者可能在檔案選擇視窗按取消，這時不該已經把區塊型態改掉。改成點擊後呼叫 `promptInsertImage(block)`，動態建立一個 `<input type="file" accept="image/png,image/jpeg,image/gif,image/webp">` 並觸發 `.click()`，只有在 `change` 事件真的選到檔案、上傳也成功之後，才把 `block.type` 設為 `'image'`、`block.src` 設為回傳的檔名；並比照「轉成表格保留原文字到第一格」的既有慣例，把區塊原本的文字保留成圖片的 `alt`（`block.text`），不會被無聲丟棄。
+
+**渲染與刪除**：圖片區塊跟表格區塊一樣，不透過一般區塊共用的 `renderBlock` 流程（沒有調整格式鈕、摺疊箭頭、清單標記），整個渲染成一個 `<img>`，hover 顯示右上角一顆「×」刪除按鈕，點擊呼叫既有的 `removeBlock(block._id)` + `commitChange(true)`——只移除筆記內容裡的這個區塊，不會連帶刪除磁碟上的圖片檔案（保留孤兒圖片，對應使用者提到但先不實作的「刪除時警告」需求）。
+
+已用隔離測試伺服器（含一篇位於子資料夾、資料夾名稱為中文的筆記）驗證整個流程：格式選單插入圖片（攔截動態建立的 `file input` 的 `click()`，用 `DataTransfer` 組一個真正的 1×1 PNG `File` 物件模擬選檔）正確把區塊轉成 `type:'image'`、原文字保留為 `alt`；貼上圖片（用 `ClipboardEvent` 帶 `DataTransfer` 模擬）正確在目前區塊後面插入新圖片區塊、不影響原區塊；拖放圖片（用 `DragEvent` 帶 `DataTransfer.files` 模擬）正確加在筆記最後；三種情境上傳的檔案都正確落在筆記所在的資料夹（含中文資料夾路徑）、`<img>` 的 `naturalWidth` 確認圖片真的有載入成功（不是破圖），也確認 URL 對中文資料夾名稱有正確做 `encodeURIComponent`；重新整理頁面後圖片區塊正確重新解析並顯示；點擊「×」正確移除區塊但磁碟上的圖片檔案不受影響（確認孤兒圖片是預期行為）；直接對這個測試伺服器發真實的 `fetch` 確認不支援的副檔名會被伺服器拒絕（400）。Python 測試新增圖片 parser/serializer round-trip 與 API 上傳（含子資料夾、副檔名白名單、10MB 上限、覆蓋既有檔案、檔名路徑穿越攻擊會被 `_safe_upload_filename` 擋掉、讀取端點路徑逃逸拒絕）共 11 個新測試，全部 47 個測試維持通過。
+
+已知限制（README 已列出，未來規劃見上）：圖片檔案不會顯示於樹狀索引（`tree.py` 本來就只列 `.md` 檔案，不用額外處理）；筆記內容以外的行內圖片語法（一行文字裡夾雜 `![]()`）目前不會被辨識成圖片區塊，仍當一般段落文字處理；搬移/刪除含圖片的筆記時圖片不會跟著處理，使用者已明確表示這次先不做確認提示，之後再做。
 ## Risks / Trade-offs
 
 - [Python 3.8 已停止官方安全更新] → 僅作為本機離線工具使用，不對外部網路開放服務，降低此風險的實際影響；於文件中註明此限制。

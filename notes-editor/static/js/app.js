@@ -115,7 +115,7 @@
     setStatus('載入中…');
 
     window.NotesApi.getNote(node.path).then(function (data) {
-      window.NotesEditor.load(data.blocks);
+      window.NotesEditor.load(data.blocks, parentDirOf(node.path));
       setStatus(formatRelativeTime(data.updated_at));
     }).catch(function (err) {
       setStatus('載入失敗：' + err.message);
@@ -315,6 +315,12 @@
     });
     window.NotesEditor.init(blockEditorEl, {
       onChange: scheduleSave,
+      onImageUpload: function (file) {
+        if (!currentNode) {
+          return Promise.reject(new Error('尚未開啟任何筆記'));
+        }
+        return window.NotesApi.uploadImage(currentNode.path, file);
+      },
     });
 
     document.getElementById('btn-new-folder').addEventListener('click', function () {
