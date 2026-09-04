@@ -317,3 +317,12 @@
 - [x] 40.4 `.block-code-lang` 改為絕對定位於右上角（`right: 38px`，避開同一列右側的刪除按鈕 `right: 8px`），預設 `opacity: 0`，搭配 `.block-code-wrap:focus-within .block-code-lang { opacity: 1; }` 純用 CSS 實現「焦點在區塊內（含選單本身）才顯示」，不需要額外的 JS focus/blur 監聽
 - [x] 40.5 以隔離測試伺服器驗證：轉換為程式碼區塊後背景為淡色、輸入內容時右上角出現語言下拉選單；點擊空白處失焦後選單自動隱藏；選擇「JavaScript」後 `getBlocks()`／存檔的 `.md` 檔案正確帶有 ```` ```javascript ```` 圍欄；重新整理頁面後再次點入區塊，選單正確預先選取「JavaScript」；刪除按鈕與語言選單不重疊。Python 測試 53 個維持通過（純前端修正）
 - [x] 40.6 README 更新程式碼區塊的樣式與語言選單操作說明；`specs/outline-note-editor/spec.md` 的語言標記情境改寫為描述下拉選單行為，並新增「既有語言標記不在清單內時動態附加選項」情境
+
+## 41. 「複製原始碼」／「檢視原始碼」按鈕互換位置並加上圖示
+
+- [x] 41.1 使用者要求：兩個按鈕的顯示順序互換（「檢視原始碼」在前、「複製原始碼」在後），並各自加上圖示以利辨識
+- [x] 41.2 `templates/index.html` 調整兩個按鈕的 DOM 順序；按鈕內容從純文字改成 `<svg class="btn-icon">`（沿用既有專案的手繪單色線條 SVG 風格：`stroke="currentColor"`）加上 `<span class="btn-label">文字</span>`——「檢視原始碼」用 `</>`折線圖示，「複製原始碼」用兩個重疊方框的複製圖示
+- [x] 41.3 `app.js` 新增 `setButtonLabel(btn, text)` 輔助函式（`btn.querySelector('.btn-label').textContent = text`），取代原本直接對按鈕整體設定 `textContent` 的寫法（原寫法會把圖示一併清空），套用到「檢視原始碼」↔「切換為區塊編輯」與「複製原始碼」↔「已複製！」的所有文字切換點
+- [x] 41.4 CSS 補上 `#btn-copy-source`／`#btn-toggle-source` 的 `display: flex; align-items: center; gap: 6px;` 讓圖示與文字水平對齊
+- [x] 41.5 以隔離測試伺服器驗證：畫面上「檢視原始碼」顯示在左、「複製原始碼」在右，皆帶圖示；點擊「檢視原始碼」正確切到原始碼模式且文字變成「切換為區塊編輯」、圖示不受影響；切回區塊模式文字與圖示皆正確恢復；用 JS 直接呼叫 `setButtonLabel` 驗證複製按鈕的「已複製！」回饋文字寫入時圖示同樣維持不變（實際點擊複製按鈕在此隔離瀏覽器環境下因剪貼簿寫入權限被拒絕而無法觸發成功回饋，屬於自動化測試環境限制，非本次程式改動造成，複製功能本身邏輯未變動）。Python 測試 53 個維持通過（純前端修正）
+- [x] 41.6 README 補充兩個按鈕現在皆有圖示的說明；`specs/outline-note-editor/spec.md` 的「原始 Markdown 檢視與編輯」需求補充圖示與顯示順序的規範

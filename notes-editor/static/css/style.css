@@ -292,6 +292,9 @@ html, body {
 
 #btn-copy-source,
 #btn-toggle-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid var(--sidebar-border);
@@ -300,6 +303,11 @@ html, body {
   font-size: 13px;
   font-family: var(--font-sans);
   color: var(--muted-color);
+}
+
+#btn-copy-source .btn-icon,
+#btn-toggle-source .btn-icon {
+  flex-shrink: 0;
 }
 
 #btn-copy-source:hover,

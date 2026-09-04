@@ -11,6 +11,10 @@
   var copyFeedbackTimer = null;
   var noteTitleEl = null;
 
+  function setButtonLabel(btn, text) {
+    btn.querySelector('.btn-label').textContent = text;
+  }
+
   function parentDirOf(path) {
     var parts = path.split('/');
     parts.pop();
@@ -127,7 +131,7 @@
     blockEditorEl.hidden = false;
     sourceEditorEl.hidden = true;
     sourceEditorEl.value = '';
-    toggleSourceBtn.textContent = '檢視原始碼';
+    setButtonLabel(toggleSourceBtn, '檢視原始碼');
   }
 
   function setViewMode(mode) {
@@ -136,12 +140,12 @@
       sourceEditorEl.value = window.NotesEditor.getMarkdownSource();
       blockEditorEl.hidden = true;
       sourceEditorEl.hidden = false;
-      toggleSourceBtn.textContent = '切換為區塊編輯';
+      setButtonLabel(toggleSourceBtn, '切換為區塊編輯');
     } else {
       window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value);
       blockEditorEl.hidden = false;
       sourceEditorEl.hidden = true;
-      toggleSourceBtn.textContent = '檢視原始碼';
+      setButtonLabel(toggleSourceBtn, '檢視原始碼');
     }
   }
 
@@ -185,9 +189,9 @@
       if (copyFeedbackTimer) {
         clearTimeout(copyFeedbackTimer);
       }
-      copySourceBtn.textContent = '已複製！';
+      setButtonLabel(copySourceBtn, '已複製！');
       copyFeedbackTimer = setTimeout(function () {
-        copySourceBtn.textContent = '複製原始碼';
+        setButtonLabel(copySourceBtn, '複製原始碼');
       }, 1500);
     }).catch(function () {
       window.alert('複製失敗，請手動選取原始碼內容複製。');
