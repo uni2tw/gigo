@@ -465,6 +465,36 @@ window.NotesEditor = (function () {
           commitChange(false);
         });
         text.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowUp') {
+            if (rowIndex > 0) {
+              e.preventDefault();
+              focusTableCell(block._id, rowIndex - 1, colIndex);
+              return;
+            }
+            var ownerList = findParentList(blocks, block._id);
+            var idx = ownerList.indexOf(block);
+            e.preventDefault();
+            if (idx === 0) {
+              insertParagraphBefore(block, ownerList);
+            } else {
+              focusBlockSmart(ownerList[idx - 1]._id, true);
+            }
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            if (rowIndex + 1 < block.rows.length) {
+              e.preventDefault();
+              focusTableCell(block._id, rowIndex + 1, colIndex);
+              return;
+            }
+            var ownerListDown = findParentList(blocks, block._id);
+            var next = ownerListDown[ownerListDown.indexOf(block) + 1];
+            if (next) {
+              e.preventDefault();
+              focusBlockSmart(next._id, false);
+            }
+            return;
+          }
           if (e.key !== 'Tab') {
             return;
           }
@@ -592,6 +622,17 @@ window.NotesEditor = (function () {
     return newBlock._id;
   }
 
+  function insertParagraphBefore(block, list) {
+    var newBlock = {
+      type: 'paragraph', text: '', level: 0, children: [], checked: false,
+      rows: [], align: [], src: '', lang: '', _id: nextId(),
+    };
+    list.splice(list.indexOf(block), 0, newBlock);
+    render();
+    focusBlock(newBlock._id, false);
+    commitChange(true);
+  }
+
   function insertImageBlockAfter(block, filename) {
     var list = findParentList(blocks, block._id);
     if (!list) {
@@ -657,16 +698,33 @@ window.NotesEditor = (function () {
     textarea.style.height = textarea.scrollHeight + 'px';
   }
 
-  function focusCodeBlock(blockId) {
+  function focusCodeBlock(blockId, atEnd) {
     setTimeout(function () {
       var textarea = container.querySelector('[data-id="' + blockId + '"] .block-code-textarea');
       if (!textarea) {
         return;
       }
       textarea.focus();
-      var len = textarea.value.length;
-      textarea.setSelectionRange(len, len);
+      var pos = atEnd === false ? 0 : textarea.value.length;
+      textarea.setSelectionRange(pos, pos);
     }, 0);
+  }
+
+  function focusBlockSmart(id, atEnd) {
+    var target = findBlock(blocks, id);
+    if (!target) {
+      return;
+    }
+    if (target.type === 'table') {
+      var lastRow = (target.rows ? target.rows.length : 1) - 1;
+      focusTableCell(id, atEnd ? Math.max(lastRow, 0) : 0, 0);
+      return;
+    }
+    if (target.type === 'code_block') {
+      focusCodeBlock(id, atEnd);
+      return;
+    }
+    focusBlock(id, atEnd);
   }
 
   var CODE_LANGUAGES = [
@@ -739,6 +797,20 @@ window.NotesEditor = (function () {
         e.preventDefault();
         removeBlock(block._id);
         commitChange(true);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        var onFirstLine = textarea.value.slice(0, textarea.selectionStart).indexOf('\n') === -1;
+        if (onFirstLine) {
+          var ownerList = findParentList(blocks, block._id);
+          var idx = ownerList.indexOf(block);
+          e.preventDefault();
+          if (idx === 0) {
+            insertParagraphBefore(block, ownerList);
+          } else {
+            focusBlockSmart(ownerList[idx - 1]._id, true);
+          }
+        }
         return;
       }
       if (e.key === 'Enter') {
@@ -1041,14 +1113,14 @@ window.NotesEditor = (function () {
       if (prevId) {
         e.preventDefault();
         block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
-        focusBlock(prevId, true);
+        focusBlockSmart(prevId, true);
       }
     } else if (e.key === 'ArrowDown' && !e.shiftKey && !e.altKey) {
       var nextId = adjacentVisibleBlockId(block._id, 1);
       if (nextId) {
         e.preventDefault();
         block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
-        focusBlock(nextId, false);
+        focusBlockSmart(nextId, false);
       }
     }
   }
