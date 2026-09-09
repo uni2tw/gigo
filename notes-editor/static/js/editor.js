@@ -86,17 +86,6 @@ window.NotesEditor = (function () {
     });
 
     container.addEventListener('paste', function (e) {
-      var items = (e.clipboardData && e.clipboardData.items) || [];
-      var imageItem = null;
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].type && items[i].type.indexOf('image/') === 0) {
-          imageItem = items[i];
-          break;
-        }
-      }
-      if (!imageItem || !onImageUpload) {
-        return;
-      }
       var textEl = findBlockTextAncestor(document.activeElement);
       if (!textEl || !container.contains(textEl)) {
         return;
@@ -106,16 +95,39 @@ window.NotesEditor = (function () {
       if (!block) {
         return;
       }
-      e.preventDefault();
-      var file = imageItem.getAsFile();
-      if (!file) {
+
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      var imageItem = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          imageItem = items[i];
+          break;
+        }
+      }
+      if (imageItem && onImageUpload) {
+        e.preventDefault();
+        var file = imageItem.getAsFile();
+        if (!file) {
+          return;
+        }
+        onImageUpload(file).then(function (result) {
+          insertImageBlockAfter(block, result.filename);
+        }).catch(function (err) {
+          window.alert('圖片上傳失敗：' + err.message);
+        });
         return;
       }
-      onImageUpload(file).then(function (result) {
-        insertImageBlockAfter(block, result.filename);
-      }).catch(function (err) {
-        window.alert('圖片上傳失敗：' + err.message);
-      });
+
+      var text = e.clipboardData && e.clipboardData.getData('text/plain');
+      if (!text || text.indexOf('\n') === -1) {
+        return;
+      }
+      var parsedBlocks = window.NotesMarkdown.parseMarkdownToBlocks(text);
+      if (!parsedBlocks.length) {
+        return;
+      }
+      e.preventDefault();
+      pasteBlocksAt(block, parsedBlocks);
     });
 
     container.addEventListener('dragover', function (e) {
@@ -630,6 +642,20 @@ window.NotesEditor = (function () {
     list.splice(list.indexOf(block), 0, newBlock);
     render();
     focusBlock(newBlock._id, false);
+    commitChange(true);
+  }
+
+  function pasteBlocksAt(block, parsedBlocks) {
+    assignIds(parsedBlocks);
+    var list = findParentList(blocks, block._id);
+    var idx = list.indexOf(block);
+    var isEmpty = NON_TEXT_TYPES.indexOf(block.type) === -1
+      && !block.text && (!block.children || !block.children.length);
+    var insertAt = isEmpty ? idx : idx + 1;
+    var removeCount = isEmpty ? 1 : 0;
+    list.splice.apply(list, [insertAt, removeCount].concat(parsedBlocks));
+    render();
+    focusBlockSmart(parsedBlocks[parsedBlocks.length - 1]._id, true);
     commitChange(true);
   }
 
