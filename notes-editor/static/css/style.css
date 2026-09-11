@@ -68,6 +68,11 @@ html, body {
   background: var(--hover-bg);
 }
 
+.btn-icon-img {
+  display: block;
+  flex-shrink: 0;
+}
+
 .tree-node {
   user-select: none;
 }
