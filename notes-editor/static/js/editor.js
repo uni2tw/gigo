@@ -14,6 +14,18 @@ window.NotesEditor = (function () {
   var HISTORY_LIMIT = 100;
   var COALESCE_MS = 600;
 
+  var searchBar = null;
+  var searchQueryInput = null;
+  var searchReplaceInput = null;
+  var searchCountEl = null;
+  var searchReplaceRow = null;
+  var searchCaseBtn = null;
+  var searchRegexBtn = null;
+  var searchMatches = [];
+  var searchCurrentIndex = -1;
+  var searchUseCase = false;
+  var searchUseRegex = false;
+
   var FORMAT_OPTIONS = [
     { label: '標題 1', type: 'heading', level: 1 },
     { label: '標題 2', type: 'heading', level: 2 },
@@ -30,6 +42,7 @@ window.NotesEditor = (function () {
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
   var ICON_MARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
   var ICON_CLEAR = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13l-6 6H7l-4-4 9-9 6 6-1 1z"/><path d="M9 20h10"/></svg>';
+  var ICON_BULLET_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>';
 
   var INLINE_BUTTONS = [
     { label: 'B', cmd: 'bold', title: '粗體', style: 'font-weight:700;' },
@@ -41,6 +54,7 @@ window.NotesEditor = (function () {
     { label: 'H2', cmd: 'heading2', title: '標題 2', style: 'font-weight:700;' },
     { label: 'H3', cmd: 'heading3', title: '標題 3', style: 'font-weight:700;' },
     { label: '"', cmd: 'quote', title: '引用', style: 'font-weight:700;' },
+    { icon: ICON_BULLET_LIST, cmd: 'bulletList', title: '項目符號清單', style: '' },
     { icon: ICON_CLEAR, cmd: 'clear', title: '清除格式', style: '' },
     { icon: ICON_LINK, cmd: 'link', title: '連結', style: '' },
   ];
@@ -70,12 +84,18 @@ window.NotesEditor = (function () {
       if (container.hidden) {
         return;
       }
-      var active = document.activeElement;
-      if (active && active !== document.body && !container.contains(active)) {
-        return;
-      }
       var isCtrl = e.ctrlKey || e.metaKey;
       var key = e.key.toLowerCase();
+      if (isCtrl && !e.altKey && key === 'f') {
+        e.preventDefault();
+        openSearchBar();
+        return;
+      }
+      var active = document.activeElement;
+      var withinSearchBar = searchBar && !searchBar.hidden && searchBar.contains(active);
+      if (active && active !== document.body && !container.contains(active) && !withinSearchBar) {
+        return;
+      }
       if (isCtrl && !e.altKey && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -172,6 +192,7 @@ window.NotesEditor = (function () {
 
   function load(newBlocks, baseDir) {
     imageBaseDir = baseDir || '';
+    closeSearchBar();
     setFromPlainBlocks(newBlocks);
     resetHistory();
   }
@@ -1539,9 +1560,20 @@ window.NotesEditor = (function () {
     } else if (cmd === 'clear') {
       clearInlineFormatting(block, textEl, range);
     } else if (cmd === 'heading1' || cmd === 'heading2' || cmd === 'heading3') {
-      convertBlockType(block, textEl, 'heading', Number(cmd.slice(-1)));
+      var headingLevel = Number(cmd.slice(-1));
+      if (block.type === 'heading' && block.level === headingLevel) {
+        convertBlockType(block, textEl, 'list_item', 0);
+      } else {
+        convertBlockType(block, textEl, 'heading', headingLevel);
+      }
     } else if (cmd === 'quote') {
-      convertBlockType(block, textEl, 'quote', 0);
+      if (block.type === 'quote') {
+        convertBlockType(block, textEl, 'list_item', 0);
+      } else {
+        convertBlockType(block, textEl, 'quote', 0);
+      }
+    } else if (cmd === 'bulletList') {
+      convertBlockType(block, textEl, 'list_item', 0);
     } else if (cmd === 'link') {
       var existingLink = findAncestorTag(range.commonAncestorContainer, 'A');
       if (existingLink) {
@@ -1645,12 +1677,494 @@ window.NotesEditor = (function () {
     setInlineButtonActive('code', !!findAncestorTag(node, 'CODE'));
     setInlineButtonActive('mark', !!findAncestorTag(node, 'MARK'));
     setInlineButtonActive('link', !!findAncestorTag(node, 'A'));
+
+    var textEl = findBlockTextAncestor(node);
+    var block = null;
+    if (textEl) {
+      var rowEl = textEl.closest('[data-id]');
+      block = rowEl && findBlock(blocks, rowEl.dataset.id);
+    }
+    setInlineButtonActive('heading1', !!block && block.type === 'heading' && block.level === 1);
+    setInlineButtonActive('heading2', !!block && block.type === 'heading' && block.level === 2);
+    setInlineButtonActive('heading3', !!block && block.type === 'heading' && block.level === 3);
+    setInlineButtonActive('quote', !!block && block.type === 'quote');
+    setInlineButtonActive('bulletList', !!block && block.type === 'list_item');
   }
 
   function hideFloatingToolbar() {
     if (floatingToolbar) {
       floatingToolbar.hidden = true;
     }
+  }
+
+  // -- Find & replace within the current note -----------------------------
+
+  function ensureSearchBar() {
+    if (searchBar) {
+      return searchBar;
+    }
+    searchBar = document.createElement('div');
+    searchBar.className = 'search-bar';
+    searchBar.hidden = true;
+    searchBar.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSearchBar();
+      }
+    });
+
+    var row = document.createElement('div');
+    row.className = 'search-row';
+
+    searchQueryInput = document.createElement('input');
+    searchQueryInput.type = 'text';
+    searchQueryInput.className = 'search-input';
+    searchQueryInput.placeholder = '搜尋';
+    searchQueryInput.addEventListener('input', function () {
+      runSearch();
+    });
+    searchQueryInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        gotoSearchMatch(searchCurrentIndex + (e.shiftKey ? -1 : 1));
+      }
+    });
+
+    searchCaseBtn = document.createElement('button');
+    searchCaseBtn.type = 'button';
+    searchCaseBtn.className = 'search-toggle-btn';
+    searchCaseBtn.title = '區分大小寫';
+    searchCaseBtn.textContent = 'Aa';
+    searchCaseBtn.addEventListener('click', function () {
+      searchUseCase = !searchUseCase;
+      searchCaseBtn.classList.toggle('search-toggle-active', searchUseCase);
+      runSearch();
+    });
+
+    searchRegexBtn = document.createElement('button');
+    searchRegexBtn.type = 'button';
+    searchRegexBtn.className = 'search-toggle-btn';
+    searchRegexBtn.title = '正規表示式';
+    searchRegexBtn.textContent = '.*';
+    searchRegexBtn.addEventListener('click', function () {
+      searchUseRegex = !searchUseRegex;
+      searchRegexBtn.classList.toggle('search-toggle-active', searchUseRegex);
+      runSearch();
+    });
+
+    searchCountEl = document.createElement('span');
+    searchCountEl.className = 'search-count';
+
+    var prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'search-nav-btn';
+    prevBtn.title = '上一個';
+    prevBtn.textContent = '↑';
+    prevBtn.addEventListener('click', function () {
+      gotoSearchMatch(searchCurrentIndex - 1);
+    });
+
+    var nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'search-nav-btn';
+    nextBtn.title = '下一個';
+    nextBtn.textContent = '↓';
+    nextBtn.addEventListener('click', function () {
+      gotoSearchMatch(searchCurrentIndex + 1);
+    });
+
+    var toggleReplaceBtn = document.createElement('button');
+    toggleReplaceBtn.type = 'button';
+    toggleReplaceBtn.className = 'search-toggle-btn';
+    toggleReplaceBtn.title = '切換取代';
+    toggleReplaceBtn.textContent = '⇄';
+    toggleReplaceBtn.addEventListener('click', function () {
+      searchReplaceRow.hidden = !searchReplaceRow.hidden;
+      if (!searchReplaceRow.hidden) {
+        searchReplaceInput.focus();
+      }
+    });
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'search-toggle-btn';
+    closeBtn.title = '關閉';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', function () {
+      closeSearchBar();
+    });
+
+    row.appendChild(searchQueryInput);
+    row.appendChild(searchCaseBtn);
+    row.appendChild(searchRegexBtn);
+    row.appendChild(searchCountEl);
+    row.appendChild(prevBtn);
+    row.appendChild(nextBtn);
+    row.appendChild(toggleReplaceBtn);
+    row.appendChild(closeBtn);
+
+    searchReplaceRow = document.createElement('div');
+    searchReplaceRow.className = 'search-replace-row';
+    searchReplaceRow.hidden = true;
+
+    searchReplaceInput = document.createElement('input');
+    searchReplaceInput.type = 'text';
+    searchReplaceInput.className = 'search-input';
+    searchReplaceInput.placeholder = '取代為';
+    searchReplaceInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        replaceCurrentMatch();
+      }
+    });
+
+    var replaceBtn = document.createElement('button');
+    replaceBtn.type = 'button';
+    replaceBtn.className = 'search-replace-action-btn';
+    replaceBtn.textContent = '取代';
+    replaceBtn.addEventListener('click', function () {
+      replaceCurrentMatch();
+    });
+
+    var replaceAllBtn = document.createElement('button');
+    replaceAllBtn.type = 'button';
+    replaceAllBtn.className = 'search-replace-action-btn';
+    replaceAllBtn.textContent = '全部取代';
+    replaceAllBtn.addEventListener('click', function () {
+      replaceAllMatches();
+    });
+
+    searchReplaceRow.appendChild(searchReplaceInput);
+    searchReplaceRow.appendChild(replaceBtn);
+    searchReplaceRow.appendChild(replaceAllBtn);
+
+    searchBar.appendChild(row);
+    searchBar.appendChild(searchReplaceRow);
+
+    document.body.appendChild(searchBar);
+    return searchBar;
+  }
+
+  function openSearchBar() {
+    ensureSearchBar();
+    searchBar.hidden = false;
+    searchQueryInput.focus();
+    searchQueryInput.select();
+    if (searchQueryInput.value) {
+      runSearch();
+    }
+  }
+
+  function closeSearchBar() {
+    if (!searchBar) {
+      return;
+    }
+    clearSearchHighlights();
+    searchBar.hidden = true;
+    searchMatches = [];
+    searchCurrentIndex = -1;
+  }
+
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function buildSearchRegex(query) {
+    var flags = 'g' + (searchUseCase ? '' : 'i');
+    var pattern = searchUseRegex ? query : escapeRegExp(query);
+    try {
+      return new RegExp(pattern, flags);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function findMatchesInText(text, regex) {
+    var matches = [];
+    regex.lastIndex = 0;
+    var m;
+    while ((m = regex.exec(text))) {
+      matches.push({ start: m.index, end: m.index + m[0].length });
+      if (m[0].length === 0) {
+        regex.lastIndex += 1;
+      }
+    }
+    return matches;
+  }
+
+  function clearSearchHighlights() {
+    if (!container) {
+      return;
+    }
+    var marks = container.querySelectorAll('span.search-match, span.search-match-current');
+    var affectedTextEls = [];
+    Array.prototype.forEach.call(marks, function (mark) {
+      var textEl = mark.closest('.block-text');
+      unwrapElement(mark);
+      if (textEl && affectedTextEls.indexOf(textEl) === -1) {
+        affectedTextEls.push(textEl);
+      }
+    });
+    affectedTextEls.forEach(function (textEl) {
+      textEl.normalize();
+    });
+    var codeCurrents = container.querySelectorAll('.block-code-textarea.search-current-code');
+    Array.prototype.forEach.call(codeCurrents, function (ta) {
+      ta.classList.remove('search-current-code');
+    });
+  }
+
+  function rangeFromTextOffsets(root, start, end) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var pos = 0;
+    var range = document.createRange();
+    var startSet = false;
+    var node;
+    while ((node = walker.nextNode())) {
+      var len = node.textContent.length;
+      if (!startSet && pos + len >= start) {
+        range.setStart(node, start - pos);
+        startSet = true;
+      }
+      if (startSet && pos + len >= end) {
+        range.setEnd(node, end - pos);
+        return range;
+      }
+      pos += len;
+    }
+    return null;
+  }
+
+  function highlightSearchMatches() {
+    var byBlock = {};
+    searchMatches.forEach(function (m, idx) {
+      if (m.kind === 'code') {
+        return;
+      }
+      byBlock[m.blockId] = byBlock[m.blockId] || [];
+      byBlock[m.blockId].push(idx);
+    });
+    Object.keys(byBlock).forEach(function (blockId) {
+      var rowEl = container.querySelector('[data-id="' + blockId + '"]');
+      var textEl = rowEl && rowEl.querySelector('.block-text');
+      if (!textEl) {
+        return;
+      }
+      var idxs = byBlock[blockId].slice().sort(function (a, b) {
+        return searchMatches[b].start - searchMatches[a].start;
+      });
+      idxs.forEach(function (idx) {
+        var m = searchMatches[idx];
+        var range = rangeFromTextOffsets(textEl, m.start, m.end);
+        if (!range) {
+          return;
+        }
+        var span = document.createElement('span');
+        span.className = idx === searchCurrentIndex ? 'search-match-current' : 'search-match';
+        try {
+          range.surroundContents(span);
+        } catch (e) {
+          var contents = range.extractContents();
+          span.appendChild(contents);
+          range.insertNode(span);
+        }
+      });
+    });
+  }
+
+  function updateSearchCountDisplay() {
+    if (!searchCountEl) {
+      return;
+    }
+    searchCountEl.textContent = searchMatches.length
+      ? (searchCurrentIndex + 1) + '/' + searchMatches.length
+      : '0/0';
+  }
+
+  function expandAncestorsForBlock(blockId) {
+    var changed = false;
+    var list = findParentList(blocks, blockId);
+    while (list && list !== blocks) {
+      var owner = findOwnerBlock(blocks, list);
+      if (!owner) {
+        break;
+      }
+      if (owner._collapsed) {
+        owner._collapsed = false;
+        changed = true;
+      }
+      list = findParentList(blocks, owner._id);
+    }
+    return changed;
+  }
+
+  function gotoSearchMatch(index) {
+    if (!searchMatches.length) {
+      return;
+    }
+    searchCurrentIndex = ((index % searchMatches.length) + searchMatches.length) % searchMatches.length;
+    var match = searchMatches[searchCurrentIndex];
+    if (expandAncestorsForBlock(match.blockId)) {
+      render();
+    }
+    clearSearchHighlights();
+    highlightSearchMatches();
+    updateSearchCountDisplay();
+    var rowEl = container.querySelector('[data-id="' + match.blockId + '"]');
+    if (rowEl) {
+      rowEl.scrollIntoView({ block: 'center' });
+    }
+    if (match.kind === 'code' && rowEl) {
+      var textarea = rowEl.querySelector('.block-code-textarea');
+      if (textarea) {
+        textarea.classList.add('search-current-code');
+        textarea.setSelectionRange(match.start, match.end);
+      }
+    }
+  }
+
+  function runSearch() {
+    clearSearchHighlights();
+    searchMatches = [];
+    searchCurrentIndex = -1;
+
+    var query = searchQueryInput ? searchQueryInput.value : '';
+    if (searchQueryInput) {
+      searchQueryInput.classList.remove('search-input-error');
+    }
+    if (!query || !container) {
+      updateSearchCountDisplay();
+      return;
+    }
+
+    var regex = buildSearchRegex(query);
+    if (!regex) {
+      searchQueryInput.classList.add('search-input-error');
+      updateSearchCountDisplay();
+      return;
+    }
+
+    var rows = container.querySelectorAll('[data-id]');
+    Array.prototype.forEach.call(rows, function (rowEl) {
+      var blockId = rowEl.dataset.id;
+      var textEl = rowEl.querySelector('.block-text');
+      if (textEl) {
+        findMatchesInText(textEl.textContent, regex).forEach(function (m) {
+          searchMatches.push({ blockId: blockId, start: m.start, end: m.end, kind: 'text' });
+        });
+      }
+      var codeTextarea = rowEl.querySelector('.block-code-textarea');
+      if (codeTextarea) {
+        findMatchesInText(codeTextarea.value, regex).forEach(function (m) {
+          searchMatches.push({ blockId: blockId, start: m.start, end: m.end, kind: 'code' });
+        });
+      }
+    });
+
+    if (!searchMatches.length) {
+      updateSearchCountDisplay();
+      return;
+    }
+    gotoSearchMatch(0);
+  }
+
+  function replaceCurrentMatch() {
+    if (searchCurrentIndex < 0 || !searchMatches.length) {
+      return;
+    }
+    var replacement = searchReplaceInput ? searchReplaceInput.value : '';
+    var match = searchMatches[searchCurrentIndex];
+    clearSearchHighlights();
+    var rowEl = container.querySelector('[data-id="' + match.blockId + '"]');
+    var block = findBlock(blocks, match.blockId);
+    if (!rowEl || !block) {
+      return;
+    }
+    if (match.kind === 'code') {
+      var textarea = rowEl.querySelector('.block-code-textarea');
+      if (!textarea) {
+        return;
+      }
+      var value = textarea.value;
+      textarea.value = value.slice(0, match.start) + replacement + value.slice(match.end);
+      block.text = textarea.value;
+      autoGrowTextarea(textarea);
+    } else {
+      var textEl = rowEl.querySelector('.block-text');
+      if (!textEl) {
+        return;
+      }
+      var range = rangeFromTextOffsets(textEl, match.start, match.end);
+      if (!range) {
+        return;
+      }
+      range.deleteContents();
+      if (replacement) {
+        range.insertNode(document.createTextNode(replacement));
+      }
+      textEl.normalize();
+      block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    }
+    commitChange(true);
+    runSearch();
+  }
+
+  function replaceAllMatches() {
+    if (!searchMatches.length) {
+      return;
+    }
+    var replacement = searchReplaceInput ? searchReplaceInput.value : '';
+    clearSearchHighlights();
+
+    var byBlock = {};
+    searchMatches.forEach(function (m) {
+      byBlock[m.blockId] = byBlock[m.blockId] || [];
+      byBlock[m.blockId].push(m);
+    });
+
+    Object.keys(byBlock).forEach(function (blockId) {
+      var rowEl = container.querySelector('[data-id="' + blockId + '"]');
+      var block = findBlock(blocks, blockId);
+      if (!rowEl || !block) {
+        return;
+      }
+      var ms = byBlock[blockId].slice().sort(function (a, b) {
+        return b.start - a.start;
+      });
+      if (ms[0].kind === 'code') {
+        var textarea = rowEl.querySelector('.block-code-textarea');
+        if (!textarea) {
+          return;
+        }
+        var value = textarea.value;
+        ms.forEach(function (m) {
+          value = value.slice(0, m.start) + replacement + value.slice(m.end);
+        });
+        textarea.value = value;
+        block.text = value;
+        autoGrowTextarea(textarea);
+        return;
+      }
+      var textEl = rowEl.querySelector('.block-text');
+      if (!textEl) {
+        return;
+      }
+      ms.forEach(function (m) {
+        var range = rangeFromTextOffsets(textEl, m.start, m.end);
+        if (!range) {
+          return;
+        }
+        range.deleteContents();
+        if (replacement) {
+          range.insertNode(document.createTextNode(replacement));
+        }
+      });
+      textEl.normalize();
+      block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    });
+
+    commitChange(true);
+    runSearch();
   }
 
   return {
