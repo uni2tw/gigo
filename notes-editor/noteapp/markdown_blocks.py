@@ -11,6 +11,9 @@ _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
 _FENCE_RE = re.compile(r'^```(\w*)\s*$')
+_CALLOUT_MARKER_RE = re.compile(r'^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$', re.IGNORECASE)
+
+CALLOUT_KINDS = ('note', 'tip', 'important', 'warning', 'caution')
 
 
 def _split_table_row(line):
@@ -55,10 +58,10 @@ class Block(object):
     plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None, src='', lang=''):
+                 rows=None, align=None, src='', lang='', calloutKind='note'):
         self.type = type_
         self.text = text
         self.level = level
@@ -68,6 +71,7 @@ class Block(object):
         self.align = align if align is not None else []
         self.src = src
         self.lang = lang
+        self.calloutKind = calloutKind
 
     def to_dict(self):
         return {
@@ -80,6 +84,7 @@ class Block(object):
             'align': self.align,
             'src': self.src,
             'lang': self.lang,
+            'calloutKind': self.calloutKind,
         }
 
     @staticmethod
@@ -93,6 +98,7 @@ class Block(object):
             align=d.get('align') or [],
             src=d.get('src') or '',
             lang=d.get('lang') or '',
+            calloutKind=d.get('calloutKind') or 'note',
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -151,6 +157,24 @@ def parse_markdown_to_blocks(text):
             blocks.append(Block('heading', heading_match.group(2).strip(), level))
             list_stack = []
             i += 1
+            continue
+
+        callout_match = _CALLOUT_MARKER_RE.match(raw_line.strip())
+        if callout_match:
+            kind = callout_match.group(1).lower()
+            body_lines = []
+            i += 1
+            while i < n:
+                line = lines[i]
+                if line.strip() == '' or _CALLOUT_MARKER_RE.match(line.strip()):
+                    break
+                body_match = _QUOTE_RE.match(line)
+                if not body_match:
+                    break
+                body_lines.append(body_match.group(1))
+                i += 1
+            blocks.append(Block('callout', text='\n'.join(body_lines), calloutKind=kind))
+            list_stack = []
             continue
 
         quote_match = _QUOTE_RE.match(raw_line)
@@ -229,6 +253,11 @@ def blocks_to_markdown(blocks):
                 lines.append('#' * level + ' ' + block.text)
             elif block.type == 'quote':
                 lines.append('> ' + block.text)
+            elif block.type == 'callout':
+                kind = (block.calloutKind or 'note').upper()
+                lines.append('> [!%s]' % kind)
+                for body_line in (block.text or '').split('\n'):
+                    lines.append('> ' + body_line)
             elif block.type == 'ordered_item':
                 lines.append((' ' * (depth * INDENT_SIZE)) + '%d. ' % ordered_counter + block.text)
             elif block.type == 'checklist_item':

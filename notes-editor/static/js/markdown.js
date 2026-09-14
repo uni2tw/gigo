@@ -9,6 +9,9 @@ window.NotesMarkdown = (function () {
   var TABLE_SEP_CELL_RE = /^:?-+:?$/;
   var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
   var FENCE_RE = /^```(\w*)\s*$/;
+  var CALLOUT_MARKER_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i;
+
+  var CALLOUT_KINDS = ['note', 'tip', 'important', 'warning', 'caution'];
 
   function repeatStr(s, n) {
     var out = '';
@@ -132,6 +135,35 @@ window.NotesMarkdown = (function () {
         continue;
       }
 
+      var calloutMatch = CALLOUT_MARKER_RE.exec(rawLine.trim());
+      if (calloutMatch) {
+        var calloutKind = calloutMatch[1].toLowerCase();
+        var bodyLines = [];
+        i += 1;
+        while (i < n) {
+          var line = lines[i];
+          if (line.replace(/\s/g, '') === '' || CALLOUT_MARKER_RE.test(line.trim())) {
+            break;
+          }
+          var bodyMatch = QUOTE_RE.exec(line);
+          if (!bodyMatch) {
+            break;
+          }
+          bodyLines.push(bodyMatch[1]);
+          i += 1;
+        }
+        blocks.push({
+          type: 'callout',
+          level: 0,
+          text: bodyLines.join('\n'),
+          calloutKind: calloutKind,
+          children: [],
+          checked: false,
+        });
+        listStack = [];
+        continue;
+      }
+
       var quoteMatch = QUOTE_RE.exec(rawLine);
       if (quoteMatch) {
         blocks.push({ type: 'quote', level: 0, text: quoteMatch[1].trim(), children: [], checked: false });
@@ -224,6 +256,12 @@ window.NotesMarkdown = (function () {
           lines.push(repeatStr('#', level) + ' ' + block.text);
         } else if (block.type === 'quote') {
           lines.push('> ' + block.text);
+        } else if (block.type === 'callout') {
+          var calloutKindUp = (block.calloutKind || 'note').toUpperCase();
+          lines.push('> [!' + calloutKindUp + ']');
+          (block.text || '').split('\n').forEach(function (bodyLine) {
+            lines.push('> ' + bodyLine);
+          });
         } else if (block.type === 'ordered_item') {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + orderedCounter + '. ' + block.text);
         } else if (block.type === 'checklist_item') {
@@ -307,6 +345,8 @@ window.NotesMarkdown = (function () {
       return '<span style="font-size:' + s.px + 'px">' + s.html + '</span>';
     });
 
+    html = html.replace(/\n/g, '<br>');
+
     return html;
   }
 
@@ -353,5 +393,6 @@ window.NotesMarkdown = (function () {
     inlineMarkdownToHtml: inlineMarkdownToHtml,
     htmlToInlineMarkdown: htmlToInlineMarkdown,
     stripFontSizeMarkup: stripFontSizeMarkup,
+    CALLOUT_KINDS: CALLOUT_KINDS,
   };
 })();

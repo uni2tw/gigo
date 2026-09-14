@@ -37,12 +37,46 @@ window.NotesEditor = (function () {
     { label: '表格', type: 'table', level: 0 },
     { label: '插入圖片', type: 'image', level: 0 },
     { label: '程式碼', type: 'code_block', level: 0 },
+    { label: '提示框', type: 'callout', level: 0 },
   ];
 
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
   var ICON_MARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
   var ICON_CLEAR = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13l-6 6H7l-4-4 9-9 6 6-1 1z"/><path d="M9 20h10"/></svg>';
   var ICON_BULLET_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>';
+
+  var CALLOUT_KIND_CONFIG = {
+    note: {
+      label: '備註',
+      color: '#0969da',
+      bg: '#ddf4ff',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor" stroke="none"/></svg>',
+    },
+    tip: {
+      label: '提示',
+      color: '#1a7f37',
+      bg: '#dafbe1',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.45 1 .95 1 1.6V16h5v-.5c0-.65.4-1.15 1-1.6A6 6 0 0 0 12 3z"/></svg>',
+    },
+    important: {
+      label: '重要',
+      color: '#8250df',
+      bg: '#fbefff',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l4 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/><path d="M18.5 6.5a7 7 0 0 1 0 11"/></svg>',
+    },
+    warning: {
+      label: '警告',
+      color: '#9a6700',
+      bg: '#fff8c5',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3 20h18L12 4z"/><line x1="12" y1="10" x2="12" y2="14.5"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>',
+    },
+    caution: {
+      label: '注意',
+      color: '#cf222e',
+      bg: '#ffebe9',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5z"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="16" r="0.9" fill="currentColor" stroke="none"/></svg>',
+    },
+  };
 
   var INLINE_BUTTONS = [
     { label: 'B', cmd: 'bold', title: '粗體', style: 'font-weight:700;' },
@@ -282,6 +316,7 @@ window.NotesEditor = (function () {
         align: b.align || [],
         src: b.src || '',
         lang: b.lang || '',
+        calloutKind: b.calloutKind || 'note',
         children: stripInternal(b.children || []),
       };
     });
@@ -642,7 +677,7 @@ window.NotesEditor = (function () {
     return group;
   }
 
-  var NON_TEXT_TYPES = ['image', 'table', 'code_block'];
+  var NON_TEXT_TYPES = ['image', 'table', 'code_block', 'callout'];
 
   function ensureFollowingParagraph(list, afterIdx) {
     var next = list[afterIdx + 1];
@@ -902,6 +937,85 @@ window.NotesEditor = (function () {
     return group;
   }
 
+  function renderCalloutBlock(block) {
+    if (!block.calloutKind || !CALLOUT_KIND_CONFIG[block.calloutKind]) {
+      block.calloutKind = 'note';
+    }
+
+    var group = document.createElement('div');
+
+    var row = document.createElement('div');
+    row.className = 'block-row block-callout-row';
+    row.dataset.id = block._id;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'block-callout block-callout-' + block.calloutKind;
+
+    var iconWrap = document.createElement('span');
+    iconWrap.className = 'block-callout-icon';
+    iconWrap.innerHTML = CALLOUT_KIND_CONFIG[block.calloutKind].icon;
+    wrap.appendChild(iconWrap);
+
+    var text = document.createElement('div');
+    text.className = 'block-text block-callout-text';
+    text.contentEditable = 'true';
+    text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(block.text);
+
+    text.addEventListener('input', function () {
+      block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
+      commitChange(false);
+    });
+    text.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.execCommand('insertLineBreak');
+        block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
+        commitChange(false);
+        return;
+      }
+      if (e.key === 'Backspace' && text.textContent === '') {
+        e.preventDefault();
+        removeBlock(block._id);
+        commitChange(true);
+      }
+    });
+    wrap.appendChild(text);
+
+    var kindSelect = document.createElement('select');
+    kindSelect.className = 'block-callout-kind-select';
+    kindSelect.title = '提示框類型';
+    window.NotesMarkdown.CALLOUT_KINDS.forEach(function (kind) {
+      var opt = document.createElement('option');
+      opt.value = kind;
+      opt.textContent = CALLOUT_KIND_CONFIG[kind].label;
+      kindSelect.appendChild(opt);
+    });
+    kindSelect.value = block.calloutKind;
+    kindSelect.addEventListener('change', function () {
+      block.calloutKind = kindSelect.value;
+      render();
+      focusBlock(block._id, true);
+      commitChange(true);
+    });
+    wrap.appendChild(kindSelect);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'block-callout-delete';
+    delBtn.title = '刪除提示框';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeBlock(block._id);
+      commitChange(true);
+    });
+    wrap.appendChild(delBtn);
+
+    row.appendChild(wrap);
+    group.appendChild(row);
+    return group;
+  }
+
   function renderBlock(block, orderedIndex) {
     if (block.type === 'code_block') {
       return renderCodeBlock(block);
@@ -911,6 +1025,9 @@ window.NotesEditor = (function () {
     }
     if (block.type === 'table') {
       return renderTableBlock(block);
+    }
+    if (block.type === 'callout') {
+      return renderCalloutBlock(block);
     }
 
     var group = document.createElement('div');
@@ -1041,6 +1158,9 @@ window.NotesEditor = (function () {
           render();
           focusCodeBlock(block._id);
         } else {
+          if (opt.type === 'callout') {
+            block.calloutKind = block.calloutKind || 'note';
+          }
           render();
           focusBlock(block._id, true);
         }

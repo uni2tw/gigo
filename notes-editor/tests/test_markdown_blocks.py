@@ -228,6 +228,63 @@ class MarkdownBlocksTests(unittest.TestCase):
         serialized = blocks_to_markdown(blocks)
         self.assertEqual(serialized, text)
 
+    def test_callout_basic_parse(self):
+        text = '> [!NOTE]\n> hello world\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].calloutKind, 'note')
+        self.assertEqual(blocks[0].text, 'hello world')
+
+    def test_callout_multiline_body(self):
+        text = '> [!WARNING]\n> line one\n> line two\n> line three\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].calloutKind, 'warning')
+        self.assertEqual(blocks[0].text, 'line one\nline two\nline three')
+
+    def test_callout_all_kinds_case_insensitive(self):
+        for kind in ('note', 'tip', 'important', 'warning', 'caution'):
+            blocks = parse_markdown_to_blocks('> [!%s]\n> body\n' % kind.upper())
+            self.assertEqual(blocks[0].type, 'callout')
+            self.assertEqual(blocks[0].calloutKind, kind)
+
+    def test_callout_empty_body(self):
+        blocks = parse_markdown_to_blocks('> [!NOTE]\n')
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].text, '')
+
+    def test_callout_stops_at_blank_line(self):
+        text = '> [!NOTE]\n> body\n\nplain paragraph\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[1].type, 'paragraph')
+
+    def test_callout_stops_at_next_callout_marker(self):
+        text = '> [!NOTE]\n> first\n> [!TIP]\n> second\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0].calloutKind, 'note')
+        self.assertEqual(blocks[0].text, 'first')
+        self.assertEqual(blocks[1].calloutKind, 'tip')
+        self.assertEqual(blocks[1].text, 'second')
+
+    def test_callout_unrecognized_kind_falls_back_to_quote(self):
+        blocks = parse_markdown_to_blocks('> [!FOO]\n')
+        self.assertEqual(blocks[0].type, 'quote')
+        self.assertEqual(blocks[0].text, '[!FOO]')
+
+    def test_callout_round_trip(self):
+        text = '# Title\n> [!IMPORTANT]\n> line one\n> line two\n- item\n'
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        self.assertEqual(serialized, text)
+
+    def test_callout_from_dict_default_kind(self):
+        from noteapp.markdown_blocks import Block
+        block = Block.from_dict({'type': 'callout', 'text': 'x', 'children': []})
+        self.assertEqual(block.calloutKind, 'note')
+
 
 if __name__ == '__main__':
     unittest.main()
