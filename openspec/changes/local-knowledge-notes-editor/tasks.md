@@ -400,3 +400,25 @@
 - [x] 49.6 使用者再要求樹狀索引圖示尺寸先改 2 倍（32px），後又改成統一 24px 定案；來源 PNG 皆為 64×64，24px 顯示尺寸仍在原始解析度內，不會模糊
 - [x] 49.7 以隔離測試伺服器驗證：`folder.png`／`note.png`（無「+」）與去背後的 `new-folder.png`／`new-note.png`（有「+」）分別在淺色與深色背景下檢視，確認前者風格與含「+」版本一致、後者去背乾淨無白色暈邊殘留；樹狀索引裡的資料夾/筆記圖示與工具列/選單的「+」圖示皆正確顯示於 24px／32px 對應尺寸；建立資料夾與筆記功能不受影響；瀏覽器主控台無錯誤。Python 測試 53 個維持通過（純前端資源與少量 JS/CSS 改動，不影響任何邏輯）
 - [x] 49.8 README 的 Windows 7 相容性段落更新，把樹狀索引圖示也納入「全彩 PNG 例外」清單，並記錄這幾個圖示已去背/不含「+」的差異
+
+## 50. 浮動工具列擴充：醒目提示、標題/引用轉換、清除格式；格式選單目前狀態提示
+
+- [x] 50.1 使用者以 Outline 編輯畫面的浮動工具列截圖為參考，詢問 gigo 有哪些可優化方向；比對後提出四項符合單人/本機定位的優化：醒目提示（螢光筆）行內格式、選取文字直接轉標題/引用（不需離開選取狀態記快捷鍵或另開 Aa 選單）、清除格式、格式選單/浮動工具列的目前狀態視覺回饋；同時明確排除 Outline 的留言（comment）協作功能，因為跟 gigo 單人本機、無伺服器同步的定位衝突。使用者確認全部列入並開始實作
+- [x] 50.2 `markdown.js`／`markdown_blocks.py`：醒目提示比照既有的粗體/斜體/刪除線走法——新增 `html = html.replace(/==([^=]+)==/g, '<mark>$1</mark>')`、在 `INLINE_WRAP_TAGS` 加入 `MARK: '=='`，重用既有的通用「同字串包住頭尾」序列化邏輯，不需要新增獨立的解析/序列化程式碼；確認 Python 端的 `Block.text` 本來就是不解析行內語法的原始字串（粗體/斜體/字級調整等既有行內格式皆是如此），純前端功能，Python 完全不需改動
+- [x] 50.3 `editor.js` 新增 `ICON_MARK`（螢光筆造型）、`ICON_CLEAR`（橡皮擦造型）SVG 圖示；`INLINE_BUTTONS` 擴充為 B / I / S / 醒目提示 / 行內程式碼 / H1 / H2 / H3 / 引用 / 清除格式 / 連結，順序比照參考截圖
+- [x] 50.4 `applyInlineCommand` 新增分支：`mark` 呼叫既有的 `toggleInlineWrap('mark')`（該函式本來就是通用的「指定標籤名稱」包住/取消包住，不需修改，直接可用於 `mark` 標籤）；`heading1`／`heading2`／`heading3`／`quote` 呼叫新增的 `convertBlockType(block, textEl, type, level)`（先保留選取範圍所在區塊目前的行內格式化文字，再切換 `block.type`/`block.level`、重繪、聚焦、存檔，邏輯跟既有 Aa 選單的區塊型態切換一致，只是觸發點從區塊層級的下拉選單改成選取層級的浮動工具列）；`clear` 呼叫新增的 `clearInlineFormatting(block, textEl, range)`（取選取範圍的純文字 `range.toString()`，刪除選取內容後插入一個純文字節點取代，讓瀏覽器原生處理部分重疊的既有格式標籤如何分割，不需要手動解析 DOM 結構）
+- [x] 50.5 浮動工具列目前狀態視覺回饋：新增 `inlineButtonEls` 記錄各按鈕 DOM 元素、`updateInlineToolbarActiveState(range)` 在每次顯示浮動工具列時執行，用 `document.queryCommandState('bold'/'italic'/'strikeThrough')`（原生瀏覽器 API，可直接查詢目前選取範圍是否已套用該格式）搭配既有的 `findAncestorTag` 查 `CODE`/`MARK`/`A`，將對應按鈕加上 `.inline-toolbar-btn-active`（橘色底）CSS class
+- [x] 50.6 格式選單（Aa）目前狀態視覺回饋：`renderFormatMenu` 建立每個選項按鈕時，比對 `opt.type === block.type && opt.level === block.level`，相符則加上 `.active` class（淺橘底、橘字、粗體），涵蓋標題層級、引用、清單型態、表格/圖片/程式碼等所有既有選項，不需個別特殊處理
+- [x] 50.7 CSS 新增 `.block-text mark`（淡黃底醒目提示樣式，統一外觀不依賴各瀏覽器 `<mark>` 預設樣式的差異）、`.inline-toolbar-btn-active`、`.block-format-dropdown button.active`
+- [x] 50.8 以隔離測試伺服器驗證：選取文字點擊醒目提示按鈕正確套用/取消 `<mark>`，同時按鈕本身正確顯示為使用中狀態（橘底）；點擊「標題 1」正確把選取範圍所在區塊轉為標題 1、保留原有的醒目提示格式不遺失，Aa 選單重新開啟後「標題 1」正確標示為使用中；點擊「引用」正確轉換；選取已套用醒目提示的文字點擊清除格式，正確移除為純文字、區塊型態不受影響；儲存後重新整理頁面，確認 `==文字==` 語法透過後端完整存檔與讀回、`<mark>` 正確還原顯示；`Ctrl+Z` 正確復原標題轉換等新操作；既有的粗體/斜體/刪除線/行內程式碼/連結/字級調整全部混合使用一次確認無回歸；瀏覽器主控台無錯誤。Python 測試 53 個維持通過（純前端修改，未變動後端與 parser/serializer）
+- [x] 50.9 README 補充醒目提示格式、浮動工具列的標題/引用/清除格式按鈕、以及格式選單與浮動工具列的「目前狀態」視覺提示說明；`specs/outline-note-editor/spec.md` 的「行內文字格式」與「區塊格式選單」需求新增對應情境
+
+## 51. 發現字級調整與標題轉換的視覺衝突並修正；進一步移除字級調整整個功能
+
+- [x] 51.1 使用者詢問「原來的 A 可以設定字型大小，跟新加的 H1 H2 H3 是否重疊」；實測驗證確認是真的視覺衝突（非程式邏輯互相干擾）：字級調整是用行內 `<span style="font-size:Npx">` 包住選取文字，標題大小則是用 CSS `[data-heading-level] { font-size }` 套在整個區塊上，inline style 的優先權天生高於任何 CSS 選擇器，先選字套用「小」（12px）、再把整個區塊轉成 H1（26px）後，那段文字仍然停留在 12px、明顯比標題其餘文字小一截；這個組合方式（字級調整 + 之後轉標題）其實透過既有的 Aa 選單本來就存在，只是這次新增的浮動工具列 H1/H2/H3 快速按鈕讓使用者更容易連續做出這個操作順序而更容易踩到
+- [x] 51.2 提出修正方案並取得使用者確認：轉換為標題時自動清除區塊內殘留的字級調整。`markdown.js` 新增並匯出 `stripFontSizeMarkup(text)`（重用既有的 `SIZE_SPAN_RE`，把 `<span style="font-size:...">內容</span>` 取代為 `內容`，只拆掉包裝、保留裡面的文字）；`editor.js` 的 `convertBlockType`（浮動工具列 H1/H2/H3/引用）與 Aa 選單既有的區塊型態切換，皆在 `type === 'heading'` 時呼叫這個函式清掉字級標記，轉換為其他型態（引用、清單等）則不受影響
+- [x] 51.3 以隔離測試伺服器驗證修正：重現原始衝突情境確認 12px 覆蓋殘留、轉 H1 後電腦運算樣式（`getComputedStyle`）分別為區塊 26px、內部 span 仍是 12px；套用修正後同樣操作，確認 `<span>` 標記已從 `block.text` 消失，區塊乾淨呈現純文字標題；分別透過浮動工具列與 Aa 選單兩條轉標題路徑各驗證一次；轉換為「引用」則確認字級標記不受影響、正確保留
+- [x] 51.4 使用者接著反思「是否給了過多的設定字型大小的選擇，反而容易讓使用者困擾」，並提出「A 整個拿掉，剩下一般文字/H1/H2/H3 四種大小應該也夠用」；評估後同意此方向可行——標題已完整涵蓋「讓文字變大」且語意化、不會衝突，醒目提示（本次同批新增）補上「段落內強調」的需求，唯一會失去的是「讓一小段字縮小」的能力（標題做不到縮小），但屬於更罕見的情境，跟專案一貫的克難精簡原則相符。使用者確認拿掉
+- [x] 51.5 `editor.js` 移除 `FONT_SIZE_OPTIONS`、`renderFontSizePicker`、`applyFontSize`、`findAncestorFontSizeSpan` 與浮動工具列裡對應的呼叫（`ensureFloatingToolbar` 不再附加字級選擇器）；`style.css` 移除對應的 `.inline-size-picker`／`.inline-size-dropdown` 系列規則；`markdown.js` 的 `inlineMarkdownToHtml`／`htmlToInlineMarkdown` 對 `<span style="font-size:...">` 的解析/序列化、以及新增的 `stripFontSizeMarkup` 完全保留不動，確保既有筆記裡已存的字級調整資料仍可正常讀取、顯示、轉標題時仍會被正確清除——這次只拿掉「建立新字級調整」的 UI 入口，不影響既有資料的相容性
+- [x] 51.6 以隔離測試伺服器驗證：浮動工具列不再出現「A」按鈕；用 `loadFromMarkdownSource` 載入含 `<span style="font-size:26px">` 的既有內容，確認正常顯示；對含字級調整的選取範圍轉換為標題，確認沿用 51.2 的清除邏輯正常運作（向下相容）；瀏覽器主控台無錯誤。Python 測試 53 個維持通過（純前端修改，未變動後端）
+- [x] 51.7 README 更新：移除「A」按鈕的操作說明，已知限制新增「字級調整功能已移除、由標題四級大小取代，舊資料仍相容顯示，轉標題時會清除」的說明；`specs/outline-note-editor/spec.md` 移除「選取文字調整字級」需求，改為新增「舊有字級調整資料的相容顯示與轉換清除」需求，涵蓋既有資料顯示、轉標題清除、轉其他型態不清除三種情境

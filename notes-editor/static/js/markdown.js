@@ -263,6 +263,13 @@ window.NotesMarkdown = (function () {
 
   var SIZE_SPAN_RE = /<span style="font-size:(\d+)px">([\s\S]*?)<\/span>/g;
 
+  function stripFontSizeMarkup(text) {
+    if (!text) {
+      return text;
+    }
+    return text.replace(SIZE_SPAN_RE, '$2');
+  }
+
   function inlineMarkdownToHtml(text) {
     if (!text) {
       return '';
@@ -289,6 +296,7 @@ window.NotesMarkdown = (function () {
     html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
     html = html.replace(/(^|[^*])\*([^*\s][^*]*)\*(?!\*)/g, '$1<i>$2</i>');
     html = html.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+    html = html.replace(/==([^=]+)==/g, '<mark>$1</mark>');
 
     html = html.replace(/ CODE(\d+) /g, function (m, idx) {
       return '<code>' + escapeHtml(codeSpans[Number(idx)]) + '</code>';
@@ -302,7 +310,7 @@ window.NotesMarkdown = (function () {
     return html;
   }
 
-  var INLINE_WRAP_TAGS = { B: '**', STRONG: '**', I: '*', EM: '*', S: '~~', STRIKE: '~~', DEL: '~~' };
+  var INLINE_WRAP_TAGS = { B: '**', STRONG: '**', I: '*', EM: '*', S: '~~', STRIKE: '~~', DEL: '~~', MARK: '==' };
 
   function htmlToInlineMarkdown(rootNode) {
     function walk(node) {
@@ -344,5 +352,6 @@ window.NotesMarkdown = (function () {
     blocksToMarkdown: blocksToMarkdown,
     inlineMarkdownToHtml: inlineMarkdownToHtml,
     htmlToInlineMarkdown: htmlToInlineMarkdown,
+    stripFontSizeMarkup: stripFontSizeMarkup,
   };
 })();

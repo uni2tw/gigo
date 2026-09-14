@@ -426,6 +426,12 @@ html, body {
   background: var(--hover-bg);
 }
 
+.block-format-dropdown button.active {
+  background: #fdf1e6;
+  color: #e08a3c;
+  font-weight: 600;
+}
+
 .block-bullet {
   width: 16px;
   flex-shrink: 0;
@@ -716,6 +722,13 @@ html, body {
   text-decoration: underline;
 }
 
+.block-text mark {
+  background: #fff3a3;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .block-text[data-heading-level="1"] {
   font-size: 26px;
   font-weight: 700;
@@ -859,41 +872,12 @@ html, body {
   background: rgba(255, 255, 255, 0.16);
 }
 
-.inline-size-picker {
-  position: relative;
-}
-
-.inline-size-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 210;
-  display: flex;
-  flex-direction: column;
-  min-width: 90px;
-  margin-top: 4px;
-  padding: 4px;
-  background: #24262b;
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
-}
-
-.inline-size-dropdown[hidden] {
-  display: none;
-}
-
-.inline-size-dropdown button {
-  text-align: left;
-  border: none;
-  background: none;
+.inline-toolbar-btn-active {
+  background: #e08a3c;
   color: #ffffff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: var(--font-sans);
 }
 
-.inline-size-dropdown button:hover {
-  background: rgba(255, 255, 255, 0.16);
+.inline-toolbar-btn-active:hover {
+  background: #e08a3c;
 }
+

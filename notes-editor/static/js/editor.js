@@ -7,6 +7,7 @@ window.NotesEditor = (function () {
   var idCounter = 0;
   var openDropdown = null;
   var floatingToolbar = null;
+  var inlineButtonEls = {};
   var history = [];
   var historyIndex = -1;
   var lastSnapshotTime = 0;
@@ -27,20 +28,21 @@ window.NotesEditor = (function () {
   ];
 
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
+  var ICON_MARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+  var ICON_CLEAR = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13l-6 6H7l-4-4 9-9 6 6-1 1z"/><path d="M9 20h10"/></svg>';
 
   var INLINE_BUTTONS = [
     { label: 'B', cmd: 'bold', title: '粗體', style: 'font-weight:700;' },
     { label: 'I', cmd: 'italic', title: '斜體', style: 'font-style:italic;' },
     { label: 'S', cmd: 'strikeThrough', title: '刪除線', style: 'text-decoration:line-through;' },
+    { icon: ICON_MARK, cmd: 'mark', title: '醒目提示', style: '' },
     { label: '</>', cmd: 'code', title: '行內程式碼', style: 'font-family:monospace;' },
+    { label: 'H1', cmd: 'heading1', title: '標題 1', style: 'font-weight:700;' },
+    { label: 'H2', cmd: 'heading2', title: '標題 2', style: 'font-weight:700;' },
+    { label: 'H3', cmd: 'heading3', title: '標題 3', style: 'font-weight:700;' },
+    { label: '"', cmd: 'quote', title: '引用', style: 'font-weight:700;' },
+    { icon: ICON_CLEAR, cmd: 'clear', title: '清除格式', style: '' },
     { icon: ICON_LINK, cmd: 'link', title: '連結', style: '' },
-  ];
-
-  var FONT_SIZE_OPTIONS = [
-    { label: '小', px: 12 },
-    { label: '一般', px: null },
-    { label: '大', px: 20 },
-    { label: '特大', px: 26 },
   ];
 
   function nextId() {
@@ -992,6 +994,9 @@ window.NotesEditor = (function () {
       var optBtn = document.createElement('button');
       optBtn.type = 'button';
       optBtn.textContent = opt.label;
+      if (opt.type === block.type && opt.level === block.level) {
+        optBtn.classList.add('active');
+      }
       optBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         closeOpenDropdown();
@@ -1002,6 +1007,9 @@ window.NotesEditor = (function () {
         var previousText = block.text;
         block.type = opt.type;
         block.level = opt.level;
+        if (opt.type === 'heading') {
+          block.text = window.NotesMarkdown.stripFontSizeMarkup(block.text);
+        }
         if (opt.type === 'table') {
           block.rows = [[previousText || '', ''], ['', '']];
           block.align = [null, null];
@@ -1477,8 +1485,6 @@ window.NotesEditor = (function () {
     floatingToolbar.className = 'inline-toolbar';
     floatingToolbar.hidden = true;
 
-    floatingToolbar.appendChild(renderFontSizePicker());
-
     INLINE_BUTTONS.forEach(function (b) {
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -1490,6 +1496,7 @@ window.NotesEditor = (function () {
         btn.textContent = b.label;
       }
       btn.title = b.title;
+      inlineButtonEls[b.cmd] = btn;
       btn.addEventListener('mousedown', function (e) {
         e.preventDefault();
       });
@@ -1502,107 +1509,6 @@ window.NotesEditor = (function () {
 
     document.body.appendChild(floatingToolbar);
     return floatingToolbar;
-  }
-
-  function renderFontSizePicker() {
-    var wrapper = document.createElement('div');
-    wrapper.className = 'inline-size-picker';
-
-    var trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'inline-toolbar-btn';
-    trigger.title = '文字大小';
-    trigger.textContent = 'A';
-    trigger.addEventListener('mousedown', function (e) {
-      e.preventDefault();
-    });
-
-    var dropdown = document.createElement('div');
-    dropdown.className = 'inline-size-dropdown';
-    dropdown.hidden = true;
-
-    FONT_SIZE_OPTIONS.forEach(function (opt) {
-      var optBtn = document.createElement('button');
-      optBtn.type = 'button';
-      optBtn.textContent = opt.label;
-      optBtn.addEventListener('mousedown', function (e) {
-        e.preventDefault();
-      });
-      optBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        closeOpenDropdown();
-        applyFontSize(opt.px);
-      });
-      dropdown.appendChild(optBtn);
-    });
-
-    trigger.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (openDropdown === dropdown) {
-        closeOpenDropdown();
-        return;
-      }
-      closeOpenDropdown();
-      dropdown.hidden = false;
-      openDropdown = dropdown;
-    });
-
-    wrapper.appendChild(trigger);
-    wrapper.appendChild(dropdown);
-    return wrapper;
-  }
-
-  function findAncestorFontSizeSpan(node) {
-    var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    while (el && el.classList && !el.classList.contains('block-text')) {
-      if (el.tagName === 'SPAN' && el.style && el.style.fontSize) {
-        return el;
-      }
-      el = el.parentElement;
-    }
-    return null;
-  }
-
-  function applyFontSize(px) {
-    var sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) {
-      return;
-    }
-    var range = sel.getRangeAt(0);
-    var textEl = findBlockTextAncestor(range.commonAncestorContainer);
-    if (!textEl || !container.contains(textEl)) {
-      return;
-    }
-    var blockId = textEl.closest('[data-id]').dataset.id;
-    var block = findBlock(blocks, blockId);
-    if (!block) {
-      return;
-    }
-
-    if (!px) {
-      var existing = findAncestorFontSizeSpan(range.commonAncestorContainer);
-      if (existing) {
-        unwrapElement(existing);
-      }
-      syncAfterCommand(block, textEl);
-      return;
-    }
-
-    var wrapper = document.createElement('span');
-    wrapper.style.fontSize = px + 'px';
-    try {
-      range.surroundContents(wrapper);
-    } catch (e) {
-      var contents = range.extractContents();
-      wrapper.appendChild(contents);
-      range.insertNode(wrapper);
-    }
-    var newRange = document.createRange();
-    newRange.selectNodeContents(wrapper);
-    sel.removeAllRanges();
-    sel.addRange(newRange);
-
-    syncAfterCommand(block, textEl);
   }
 
   function applyInlineCommand(cmd) {
@@ -1627,6 +1533,15 @@ window.NotesEditor = (function () {
     } else if (cmd === 'code') {
       toggleInlineWrap('code');
       syncAfterCommand(block, textEl);
+    } else if (cmd === 'mark') {
+      toggleInlineWrap('mark');
+      syncAfterCommand(block, textEl);
+    } else if (cmd === 'clear') {
+      clearInlineFormatting(block, textEl, range);
+    } else if (cmd === 'heading1' || cmd === 'heading2' || cmd === 'heading3') {
+      convertBlockType(block, textEl, 'heading', Number(cmd.slice(-1)));
+    } else if (cmd === 'quote') {
+      convertBlockType(block, textEl, 'quote', 0);
     } else if (cmd === 'link') {
       var existingLink = findAncestorTag(range.commonAncestorContainer, 'A');
       if (existingLink) {
@@ -1652,6 +1567,36 @@ window.NotesEditor = (function () {
     block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
     commitChange(true);
     hideFloatingToolbar();
+  }
+
+  function convertBlockType(block, textEl, type, level) {
+    var text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    if (type === 'heading') {
+      text = window.NotesMarkdown.stripFontSizeMarkup(text);
+    }
+    block.text = text;
+    block.type = type;
+    block.level = level;
+    render();
+    focusBlock(block._id, true);
+    commitChange(true);
+    hideFloatingToolbar();
+  }
+
+  function clearInlineFormatting(block, textEl, range) {
+    if (range.collapsed) {
+      return;
+    }
+    var plainText = range.toString();
+    range.deleteContents();
+    var textNode = document.createTextNode(plainText);
+    range.insertNode(textNode);
+    var newRange = document.createRange();
+    newRange.selectNodeContents(textNode);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    syncAfterCommand(block, textEl);
   }
 
   function handleSelectionChange() {
@@ -1681,6 +1626,25 @@ window.NotesEditor = (function () {
     var left = rect.left + (rect.width / 2) - (toolbar.offsetWidth / 2);
     toolbar.style.top = Math.max(8, top) + 'px';
     toolbar.style.left = Math.max(8, left) + 'px';
+    updateInlineToolbarActiveState(range);
+  }
+
+  function setInlineButtonActive(cmd, isActive) {
+    var el = inlineButtonEls[cmd];
+    if (!el) {
+      return;
+    }
+    el.classList.toggle('inline-toolbar-btn-active', !!isActive);
+  }
+
+  function updateInlineToolbarActiveState(range) {
+    var node = range.commonAncestorContainer;
+    setInlineButtonActive('bold', document.queryCommandState('bold'));
+    setInlineButtonActive('italic', document.queryCommandState('italic'));
+    setInlineButtonActive('strikeThrough', document.queryCommandState('strikeThrough'));
+    setInlineButtonActive('code', !!findAncestorTag(node, 'CODE'));
+    setInlineButtonActive('mark', !!findAncestorTag(node, 'MARK'));
+    setInlineButtonActive('link', !!findAncestorTag(node, 'A'));
   }
 
   function hideFloatingToolbar() {
