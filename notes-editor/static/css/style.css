@@ -1146,3 +1146,33 @@ body.link-open-modifier-active .block-text a {
   cursor: pointer;
 }
 
+.block-insert-before-btn {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--muted-color);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  z-index: 5;
+}
+
+.block-row:hover .block-insert-before-btn,
+.block-insert-before-btn:focus {
+  opacity: 1;
+}
+
+.block-insert-before-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-color);
+}
+

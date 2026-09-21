@@ -555,6 +555,7 @@ window.NotesEditor = (function () {
     var row = document.createElement('div');
     row.className = 'block-row block-table-row';
     row.dataset.id = block._id;
+    row.appendChild(createInsertBeforeButton(block));
 
     var table = document.createElement('table');
     table.className = 'block-table';
@@ -712,6 +713,7 @@ window.NotesEditor = (function () {
     var row = document.createElement('div');
     row.className = 'block-row block-image-row';
     row.dataset.id = block._id;
+    row.appendChild(createInsertBeforeButton(block));
 
     var wrap = document.createElement('div');
     wrap.className = 'block-image-wrap';
@@ -763,6 +765,25 @@ window.NotesEditor = (function () {
     render();
     focusBlock(newBlock._id, false);
     commitChange(true);
+  }
+
+  function createInsertBeforeButton(block) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'block-insert-before-btn';
+    btn.title = '在上方插入空白段落';
+    btn.textContent = '+';
+    btn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var list = findParentList(blocks, block._id);
+      if (list) {
+        insertParagraphBefore(block, list);
+      }
+    });
+    return btn;
   }
 
   function pasteBlocksAt(block, parsedBlocks) {
@@ -903,6 +924,7 @@ window.NotesEditor = (function () {
     var row = document.createElement('div');
     row.className = 'block-row block-code-row';
     row.dataset.id = block._id;
+    row.appendChild(createInsertBeforeButton(block));
 
     var wrap = document.createElement('div');
     wrap.className = 'block-code-wrap';
@@ -1009,6 +1031,7 @@ window.NotesEditor = (function () {
     var row = document.createElement('div');
     row.className = 'block-row block-callout-row';
     row.dataset.id = block._id;
+    row.appendChild(createInsertBeforeButton(block));
 
     var wrap = document.createElement('div');
     wrap.className = 'block-callout block-callout-' + block.calloutKind;
