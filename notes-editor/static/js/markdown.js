@@ -365,21 +365,24 @@ window.NotesMarkdown = (function () {
         return '\n';
       }
       if (tag === 'CODE') {
-        return '`' + node.textContent.replace(/`/g, "'") + '`';
+        return node.textContent ? '`' + node.textContent.replace(/`/g, "'") + '`' : '';
       }
       if (tag === 'A') {
         var inner = Array.prototype.map.call(node.childNodes, walk).join('');
-        return '[' + inner + '](' + (node.getAttribute('href') || '') + ')';
+        return inner ? '[' + inner + '](' + (node.getAttribute('href') || '') + ')' : '';
       }
       if (tag === 'SPAN' && node.style && node.style.fontSize) {
         var sizeInner = Array.prototype.map.call(node.childNodes, walk).join('');
+        if (!sizeInner) {
+          return '';
+        }
         var px = parseInt(node.style.fontSize, 10) || 15;
         return '<span style="font-size:' + px + 'px">' + sizeInner + '</span>';
       }
       var innerContent = Array.prototype.map.call(node.childNodes, walk).join('');
       var wrap = INLINE_WRAP_TAGS[tag];
       if (wrap) {
-        return wrap + innerContent + wrap;
+        return innerContent ? wrap + innerContent + wrap : '';
       }
       return innerContent;
     }
