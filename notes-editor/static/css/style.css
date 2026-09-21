@@ -1146,32 +1146,46 @@ body.link-open-modifier-active .block-text a {
   cursor: pointer;
 }
 
-.block-insert-before-btn {
+.block-insert-zone {
   position: absolute;
-  top: -11px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 20px;
-  height: 20px;
+  top: -6px;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.block-insert-before-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   border: 1px solid var(--sidebar-border);
   border-radius: 50%;
   background: #ffffff;
   color: var(--muted-color);
-  cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
-  padding: 0;
-  opacity: 0;
+  opacity: 0.35;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
-  z-index: 5;
 }
 
-.block-row:hover .block-insert-before-btn,
-.block-insert-before-btn:focus {
+.block-insert-zone:hover .block-insert-before-btn,
+.block-insert-zone:focus .block-insert-before-btn {
   opacity: 1;
 }
 
-.block-insert-before-btn:hover {
+.block-insert-zone:hover .block-insert-before-btn {
   background: var(--hover-bg);
   color: var(--text-color);
 }

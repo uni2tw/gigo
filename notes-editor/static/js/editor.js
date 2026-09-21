@@ -768,22 +768,27 @@ window.NotesEditor = (function () {
   }
 
   function createInsertBeforeButton(block) {
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'block-insert-before-btn';
-    btn.title = '在上方插入空白段落';
-    btn.textContent = '+';
-    btn.addEventListener('mousedown', function (e) {
+    var zone = document.createElement('button');
+    zone.type = 'button';
+    zone.className = 'block-insert-zone';
+    zone.title = '在上方插入空白段落';
+
+    var visual = document.createElement('span');
+    visual.className = 'block-insert-before-btn';
+    visual.textContent = '+';
+    zone.appendChild(visual);
+
+    zone.addEventListener('mousedown', function (e) {
       e.preventDefault();
     });
-    btn.addEventListener('click', function (e) {
+    zone.addEventListener('click', function (e) {
       e.stopPropagation();
       var list = findParentList(blocks, block._id);
       if (list) {
         insertParagraphBefore(block, list);
       }
     });
-    return btn;
+    return zone;
   }
 
   function pasteBlocksAt(block, parsedBlocks) {

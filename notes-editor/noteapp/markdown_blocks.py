@@ -242,7 +242,7 @@ def blocks_to_markdown(blocks):
 
     def emit(block_list, depth):
         ordered_counter = 0
-        for block in block_list:
+        for index, block in enumerate(block_list):
             if block.type == 'ordered_item':
                 ordered_counter += 1
             else:
@@ -282,6 +282,10 @@ def blocks_to_markdown(blocks):
 
             if block.children:
                 emit(block.children, depth + 1)
+
+            next_block = block_list[index + 1] if index + 1 < len(block_list) else None
+            if block.type == 'table' and next_block is not None and next_block.type == 'table':
+                lines.append('')
 
     emit(blocks, 0)
     return '\n'.join(lines) + ('\n' if lines else '')

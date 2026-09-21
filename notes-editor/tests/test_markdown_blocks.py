@@ -169,6 +169,41 @@ class MarkdownBlocksTests(unittest.TestCase):
         serialized = blocks_to_markdown([block])
         self.assertEqual(serialized, '| a | b |\n| --- | --- |\n| 1 |  |\n')
 
+    def test_adjacent_tables_serialize_with_blank_line_between(self):
+        from noteapp.markdown_blocks import Block
+        table1 = Block('table', rows=[['a', 'b'], ['1', '2']], align=[None, None])
+        table2 = Block('table', rows=[['c', 'd'], ['3', '4']], align=[None, None])
+        serialized = blocks_to_markdown([table1, table2])
+        self.assertEqual(
+            serialized,
+            '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n| c | d |\n| --- | --- |\n| 3 | 4 |\n',
+        )
+
+    def test_adjacent_tables_round_trip_stays_separate(self):
+        text = (
+            '| a | b |\n'
+            '| --- | --- |\n'
+            '| 1 | 2 |\n'
+            '\n'
+            '| c | d | e |\n'
+            '| --- | --- | --- |\n'
+            '| 3 | 4 | 5 |\n'
+        )
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        serialized = blocks_to_markdown(blocks)
+        blocks_again = parse_markdown_to_blocks(serialized)
+        self.assertEqual(len(blocks_again), 2)
+        self.assertEqual(blocks_again[0].rows, [['a', 'b'], ['1', '2']])
+        self.assertEqual(blocks_again[1].rows, [['c', 'd', 'e'], ['3', '4', '5']])
+
+    def test_table_not_followed_by_table_has_no_extra_blank_line(self):
+        from noteapp.markdown_blocks import Block
+        table = Block('table', rows=[['a', 'b'], ['1', '2']], align=[None, None])
+        paragraph = Block('paragraph', text='after')
+        serialized = blocks_to_markdown([table, paragraph])
+        self.assertEqual(serialized, '| a | b |\n| --- | --- |\n| 1 | 2 |\nafter\n')
+
     def test_image_basic_parse(self):
         blocks = parse_markdown_to_blocks('![a photo](photo.png)\n')
         self.assertEqual(blocks[0].type, 'image')

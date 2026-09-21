@@ -244,7 +244,7 @@ window.NotesMarkdown = (function () {
 
     function emit(list, depth) {
       var orderedCounter = 0;
-      list.forEach(function (block) {
+      list.forEach(function (block, idx) {
         if (block.type === 'ordered_item') {
           orderedCounter += 1;
         } else {
@@ -287,6 +287,11 @@ window.NotesMarkdown = (function () {
 
         if (block.children && block.children.length) {
           emit(block.children, depth + 1);
+        }
+
+        var nextBlock = list[idx + 1];
+        if (block.type === 'table' && nextBlock && nextBlock.type === 'table') {
+          lines.push('');
         }
       });
     }
