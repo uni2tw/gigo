@@ -1088,3 +1088,61 @@ html, body {
   outline-offset: -2px;
 }
 
+.link-card {
+  position: fixed;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 360px;
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+  padding: 4px 4px 4px 10px;
+}
+
+.link-card[hidden] {
+  display: none;
+}
+
+.link-card-url {
+  flex: 1;
+  min-width: 0;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted-color);
+}
+
+.link-card-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  color: var(--text-color);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.link-card-btn:hover {
+  background: var(--hover-bg);
+}
+
+.link-card-btn-remove:hover {
+  background: #ffe5e5;
+  color: #d64545;
+}
+
+body.link-open-modifier-active .block-text a {
+  cursor: pointer;
+}
+

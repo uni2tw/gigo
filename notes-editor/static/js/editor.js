@@ -26,6 +26,16 @@ window.NotesEditor = (function () {
   var searchUseCase = false;
   var searchUseRegex = false;
 
+  var linkCard = null;
+  var linkCardUrlEl = null;
+  var linkCardTargetEl = null;
+  var linkCardHideTimer = null;
+  var linkCardShowTimer = null;
+  var linkCardPendingLinkEl = null;
+  var LINK_CARD_HOVER_DELAY_MS = 500;
+  var LINK_CARD_HIDE_DELAY_MS = 500;
+  var linkOpenModifierActive = false;
+
   var FORMAT_OPTIONS = [
     { label: '標題 1', type: 'heading', level: 1 },
     { label: '標題 2', type: 'heading', level: 2 },
@@ -44,6 +54,8 @@ window.NotesEditor = (function () {
   var ICON_MARK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
   var ICON_CLEAR = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13l-6 6H7l-4-4 9-9 6 6-1 1z"/><path d="M9 20h10"/></svg>';
   var ICON_BULLET_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>';
+  var ICON_LINK_OPEN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>';
+  var ICON_LINK_EDIT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
   var CALLOUT_KIND_CONFIG = {
     note: {
@@ -115,6 +127,19 @@ window.NotesEditor = (function () {
     });
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('keydown', function (e) {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setLinkOpenModifierActive(true);
+      }
+    });
+    document.addEventListener('keyup', function (e) {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setLinkOpenModifierActive(false);
+      }
+    });
+    window.addEventListener('blur', function () {
+      setLinkOpenModifierActive(false);
+    });
+    document.addEventListener('keydown', function (e) {
       if (container.hidden) {
         return;
       }
@@ -124,6 +149,9 @@ window.NotesEditor = (function () {
         e.preventDefault();
         openSearchBar();
         return;
+      }
+      if (e.key === 'Escape' && linkCard && !linkCard.hidden) {
+        hideLinkCard();
       }
       var active = document.activeElement;
       var withinSearchBar = searchBar && !searchBar.hidden && searchBar.contains(active);
@@ -214,6 +242,39 @@ window.NotesEditor = (function () {
         window.alert('圖片上傳失敗：' + err.message);
       });
     });
+
+    container.addEventListener('click', function (e) {
+      if (!(e.ctrlKey || e.metaKey)) {
+        return;
+      }
+      var link = e.target.closest && e.target.closest('a');
+      if (link && findBlockTextAncestor(link)) {
+        e.preventDefault();
+        window.open(link.getAttribute('href') || '', '_blank', 'noopener');
+      }
+    });
+
+    container.addEventListener('mouseover', function (e) {
+      var link = e.target.closest && e.target.closest('a');
+      if (link && findBlockTextAncestor(link)) {
+        scheduleShowLinkCard(link);
+      }
+    });
+    container.addEventListener('mouseout', function (e) {
+      var link = e.target.closest && e.target.closest('a');
+      if (!link) {
+        return;
+      }
+      var related = e.relatedTarget;
+      if (linkCard && related && linkCard.contains(related)) {
+        return;
+      }
+      if (related && link.contains(related)) {
+        return;
+      }
+      cancelShowLinkCard();
+      scheduleHideLinkCard();
+    });
   }
 
   function setFromPlainBlocks(plainBlocks) {
@@ -227,6 +288,7 @@ window.NotesEditor = (function () {
   function load(newBlocks, baseDir) {
     imageBaseDir = baseDir || '';
     closeSearchBar();
+    hideLinkCard();
     setFromPlainBlocks(newBlocks);
     resetHistory();
   }
@@ -1753,11 +1815,26 @@ window.NotesEditor = (function () {
 
   function handleSelectionChange() {
     var sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) {
+    if (!sel.rangeCount) {
       hideFloatingToolbar();
+      scheduleHideLinkCard();
       return;
     }
     var range = sel.getRangeAt(0);
+    if (sel.isCollapsed) {
+      hideFloatingToolbar();
+      var caretTextEl = findBlockTextAncestor(range.commonAncestorContainer);
+      var caretLink = (caretTextEl && container && container.contains(caretTextEl))
+        ? findAncestorTag(range.commonAncestorContainer, 'A')
+        : null;
+      if (caretLink) {
+        showLinkCardForLink(caretLink);
+      } else {
+        scheduleHideLinkCard();
+      }
+      return;
+    }
+    scheduleHideLinkCard();
     var textEl = findBlockTextAncestor(range.commonAncestorContainer);
     if (!textEl || !container || !container.contains(textEl)) {
       hideFloatingToolbar();
@@ -1815,6 +1892,189 @@ window.NotesEditor = (function () {
     if (floatingToolbar) {
       floatingToolbar.hidden = true;
     }
+  }
+
+  // -- Link hover card: open / edit / remove an existing link --------------
+
+  function ensureLinkCard() {
+    if (linkCard) {
+      return linkCard;
+    }
+    linkCard = document.createElement('div');
+    linkCard.className = 'link-card';
+    linkCard.hidden = true;
+
+    linkCardUrlEl = document.createElement('span');
+    linkCardUrlEl.className = 'link-card-url';
+    linkCard.appendChild(linkCardUrlEl);
+
+    var openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'link-card-btn';
+    openBtn.title = '在新分頁開啟';
+    openBtn.innerHTML = ICON_LINK_OPEN;
+    openBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    openBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (linkCardTargetEl) {
+        window.open(linkCardTargetEl.getAttribute('href') || '', '_blank', 'noopener');
+      }
+    });
+    linkCard.appendChild(openBtn);
+
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'link-card-btn';
+    editBtn.title = '編輯網址';
+    editBtn.innerHTML = ICON_LINK_EDIT;
+    editBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    editBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      editLinkCardTarget();
+    });
+    linkCard.appendChild(editBtn);
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'link-card-btn link-card-btn-remove';
+    removeBtn.title = '移除連結';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    removeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeLinkCardTarget();
+    });
+    linkCard.appendChild(removeBtn);
+
+    linkCard.addEventListener('mouseenter', cancelHideLinkCard);
+    linkCard.addEventListener('mouseleave', scheduleHideLinkCard);
+
+    document.body.appendChild(linkCard);
+    return linkCard;
+  }
+
+  function setLinkOpenModifierActive(active) {
+    if (linkOpenModifierActive === active) {
+      return;
+    }
+    linkOpenModifierActive = active;
+    document.body.classList.toggle('link-open-modifier-active', active);
+    if (active) {
+      hideLinkCard();
+    }
+  }
+
+  function showLinkCardForLink(linkEl) {
+    if (!linkEl || !container || !container.contains(linkEl) || linkOpenModifierActive) {
+      return;
+    }
+    cancelHideLinkCard();
+    var card = ensureLinkCard();
+    if (linkCardTargetEl === linkEl && !card.hidden) {
+      return;
+    }
+    linkCardTargetEl = linkEl;
+    linkCardUrlEl.textContent = linkEl.getAttribute('href') || '';
+    card.hidden = false;
+
+    var rect = linkEl.getBoundingClientRect();
+    var top = rect.top - card.offsetHeight - 8;
+    if (top < 8) {
+      top = rect.bottom + 8;
+    }
+    var left = Math.min(rect.left, window.innerWidth - card.offsetWidth - 8);
+    card.style.top = Math.max(8, top) + 'px';
+    card.style.left = Math.max(8, left) + 'px';
+  }
+
+  function scheduleHideLinkCard() {
+    cancelHideLinkCard();
+    linkCardHideTimer = setTimeout(hideLinkCard, LINK_CARD_HIDE_DELAY_MS);
+  }
+
+  function cancelHideLinkCard() {
+    if (linkCardHideTimer) {
+      clearTimeout(linkCardHideTimer);
+      linkCardHideTimer = null;
+    }
+  }
+
+  function scheduleShowLinkCard(linkEl) {
+    if (linkCardPendingLinkEl === linkEl && linkCardShowTimer) {
+      return;
+    }
+    cancelShowLinkCard();
+    linkCardPendingLinkEl = linkEl;
+    linkCardShowTimer = setTimeout(function () {
+      linkCardShowTimer = null;
+      linkCardPendingLinkEl = null;
+      showLinkCardForLink(linkEl);
+    }, LINK_CARD_HOVER_DELAY_MS);
+  }
+
+  function cancelShowLinkCard() {
+    if (linkCardShowTimer) {
+      clearTimeout(linkCardShowTimer);
+      linkCardShowTimer = null;
+    }
+    linkCardPendingLinkEl = null;
+  }
+
+  function hideLinkCard() {
+    cancelHideLinkCard();
+    if (linkCard) {
+      linkCard.hidden = true;
+    }
+    linkCardTargetEl = null;
+  }
+
+  function editLinkCardTarget() {
+    var link = linkCardTargetEl;
+    if (!link) {
+      return;
+    }
+    var textEl = findBlockTextAncestor(link);
+    var rowEl = textEl && textEl.closest('[data-id]');
+    var block = rowEl && findBlock(blocks, rowEl.dataset.id);
+    if (!textEl || !block) {
+      return;
+    }
+    var currentHref = link.getAttribute('href') || '';
+    window.NotesModal.prompt('編輯連結網址', currentHref).then(function (url) {
+      if (!url) {
+        return;
+      }
+      link.setAttribute('href', url);
+      block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+      commitChange(true);
+      if (linkCardTargetEl === link) {
+        linkCardUrlEl.textContent = url;
+      }
+    });
+  }
+
+  function removeLinkCardTarget() {
+    var link = linkCardTargetEl;
+    if (!link) {
+      return;
+    }
+    var textEl = findBlockTextAncestor(link);
+    var rowEl = textEl && textEl.closest('[data-id]');
+    var block = rowEl && findBlock(blocks, rowEl.dataset.id);
+    if (!textEl || !block) {
+      return;
+    }
+    unwrapElement(link);
+    textEl.normalize();
+    block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    commitChange(true);
+    hideLinkCard();
   }
 
   // -- Find & replace within the current note -----------------------------
