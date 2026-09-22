@@ -70,13 +70,23 @@ window.NotesMarkdown = (function () {
   }
 
   function parseMarkdownToBlocks(text) {
+    return parseMarkdownToBlocksWithLineMap(text).blocks;
+  }
+
+  function parseMarkdownToBlocksWithLineMap(text) {
     var blocks = [];
+    var ranges = []; // [{block, startLine, endLine}], flat, in document order
     var listStack = []; // [{depth, block}], current nesting chain
     var lines = text.split(/\r\n|\r|\n/);
     var i = 0;
     var n = lines.length;
 
+    function record(block, startLine) {
+      ranges.push({ block: block, startLine: startLine, endLine: i });
+    }
+
     while (i < n) {
+      var lineStart = i;
       var rawLine = lines[i];
 
       if (rawLine.replace(/\s/g, '') === '') {
@@ -93,7 +103,9 @@ window.NotesMarkdown = (function () {
           rows.push(splitTableRow(lines[i]));
           i += 1;
         }
-        blocks.push({ type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align });
+        var tableBlock = { type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align };
+        blocks.push(tableBlock);
+        record(tableBlock, lineStart);
         listStack = [];
         continue;
       }
@@ -108,30 +120,36 @@ window.NotesMarkdown = (function () {
           i += 1;
         }
         i += 1; // skip the closing fence (or run off the end if unterminated)
-        blocks.push({ type: 'code_block', level: 0, text: codeLines.join('\n'), lang: lang, children: [], checked: false });
+        var codeBlock = { type: 'code_block', level: 0, text: codeLines.join('\n'), lang: lang, children: [], checked: false };
+        blocks.push(codeBlock);
+        record(codeBlock, lineStart);
         listStack = [];
         continue;
       }
 
       var imageMatch = IMAGE_RE.exec(rawLine.trim());
       if (imageMatch) {
-        blocks.push({ type: 'image', level: 0, text: imageMatch[1], src: imageMatch[2], children: [], checked: false });
+        var imageBlock = { type: 'image', level: 0, text: imageMatch[1], src: imageMatch[2], children: [], checked: false };
+        blocks.push(imageBlock);
         listStack = [];
         i += 1;
+        record(imageBlock, lineStart);
         continue;
       }
 
       var headingMatch = HEADING_RE.exec(rawLine);
       if (headingMatch) {
-        blocks.push({
+        var headingBlock = {
           type: 'heading',
           level: headingMatch[1].length,
           text: headingMatch[2].trim(),
           children: [],
           checked: false,
-        });
+        };
+        blocks.push(headingBlock);
         listStack = [];
         i += 1;
+        record(headingBlock, lineStart);
         continue;
       }
 
@@ -152,23 +170,27 @@ window.NotesMarkdown = (function () {
           bodyLines.push(bodyMatch[1]);
           i += 1;
         }
-        blocks.push({
+        var calloutBlock = {
           type: 'callout',
           level: 0,
           text: bodyLines.join('\n'),
           calloutKind: calloutKind,
           children: [],
           checked: false,
-        });
+        };
+        blocks.push(calloutBlock);
+        record(calloutBlock, lineStart);
         listStack = [];
         continue;
       }
 
       var quoteMatch = QUOTE_RE.exec(rawLine);
       if (quoteMatch) {
-        blocks.push({ type: 'quote', level: 0, text: quoteMatch[1].trim(), children: [], checked: false });
+        var quoteBlock = { type: 'quote', level: 0, text: quoteMatch[1].trim(), children: [], checked: false };
+        blocks.push(quoteBlock);
         listStack = [];
         i += 1;
+        record(quoteBlock, lineStart);
         continue;
       }
 
@@ -207,15 +229,18 @@ window.NotesMarkdown = (function () {
         }
         listStack.push({ depth: depth, block: newBlock });
         i += 1;
+        record(newBlock, lineStart);
         continue;
       }
 
-      blocks.push({ type: 'paragraph', level: 0, text: rawLine.trim(), children: [], checked: false });
+      var paragraphBlock = { type: 'paragraph', level: 0, text: rawLine.trim(), children: [], checked: false };
+      blocks.push(paragraphBlock);
       listStack = [];
       i += 1;
+      record(paragraphBlock, lineStart);
     }
 
-    return blocks;
+    return { blocks: blocks, ranges: ranges };
   }
 
   function formatTableRow(cells) {
@@ -240,11 +265,19 @@ window.NotesMarkdown = (function () {
   }
 
   function blocksToMarkdown(blocks) {
+    return blocksToMarkdownWithLineMap(blocks).text;
+  }
+
+  function blocksToMarkdownWithLineMap(blocks) {
     var lines = [];
+    var lineMap = {}; // blockId -> startLine (only for blocks carrying an _id)
 
     function emit(list, depth) {
       var orderedCounter = 0;
       list.forEach(function (block, idx) {
+        if (block._id) {
+          lineMap[block._id] = lines.length;
+        }
         if (block.type === 'ordered_item') {
           orderedCounter += 1;
         } else {
@@ -297,7 +330,7 @@ window.NotesMarkdown = (function () {
     }
 
     emit(blocks, 0);
-    return lines.length ? lines.join('\n') + '\n' : '';
+    return { text: lines.length ? lines.join('\n') + '\n' : '', lineMap: lineMap };
   }
 
   function escapeHtml(s) {
@@ -397,7 +430,9 @@ window.NotesMarkdown = (function () {
 
   return {
     parseMarkdownToBlocks: parseMarkdownToBlocks,
+    parseMarkdownToBlocksWithLineMap: parseMarkdownToBlocksWithLineMap,
     blocksToMarkdown: blocksToMarkdown,
+    blocksToMarkdownWithLineMap: blocksToMarkdownWithLineMap,
     inlineMarkdownToHtml: inlineMarkdownToHtml,
     htmlToInlineMarkdown: htmlToInlineMarkdown,
     stripFontSizeMarkup: stripFontSizeMarkup,

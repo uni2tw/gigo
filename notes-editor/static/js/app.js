@@ -15,6 +15,42 @@
     btn.querySelector('.btn-label').textContent = text;
   }
 
+  var MIRROR_STYLE_PROPS = [
+    'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing', 'tabSize',
+  ];
+
+  // Textareas only auto-scroll to reveal the caret once the browser has already
+  // laid the element out at least once; on the very first reveal (hidden -> visible
+  // in the same tick as a full value replacement) that heuristic silently no-ops and
+  // leaves scrollTop wherever the value assignment put it (the end). Rather than
+  // depend on that heuristic at all, measure the target offset's pixel height with an
+  // off-screen mirror that copies the textarea's wrapping-relevant styles, then set
+  // scrollTop directly.
+  function scrollTextareaToOffset(textarea, offset) {
+    var style = window.getComputedStyle(textarea);
+    var mirror = document.createElement('div');
+    MIRROR_STYLE_PROPS.forEach(function (prop) {
+      mirror.style[prop] = style[prop];
+    });
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.height = 'auto';
+    mirror.style.left = '-9999px';
+    mirror.style.top = '0';
+    mirror.textContent = textarea.value.slice(0, offset);
+    document.body.appendChild(mirror);
+    var targetHeight = mirror.scrollHeight;
+    document.body.removeChild(mirror);
+
+    var maxScrollTop = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+    var target = targetHeight - textarea.clientHeight / 2;
+    textarea.scrollTop = Math.max(0, Math.min(target, maxScrollTop));
+  }
+
   function parentDirOf(path) {
     var parts = path.split('/');
     parts.pop();
@@ -137,12 +173,18 @@
   function setViewMode(mode) {
     viewMode = mode;
     if (mode === 'source') {
-      sourceEditorEl.value = window.NotesEditor.getMarkdownSource();
+      var info = window.NotesEditor.getMarkdownSourceWithCursor();
+      sourceEditorEl.value = info.text;
       blockEditorEl.hidden = true;
       sourceEditorEl.hidden = false;
       setButtonLabel(toggleSourceBtn, '切換為區塊編輯');
+      var targetOffset = info.offset != null ? info.offset : 0;
+      sourceEditorEl.focus();
+      sourceEditorEl.setSelectionRange(targetOffset, targetOffset);
+      scrollTextareaToOffset(sourceEditorEl, targetOffset);
     } else {
-      window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value);
+      var cursorOffset = sourceEditorEl.selectionStart;
+      window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value, cursorOffset);
       blockEditorEl.hidden = false;
       sourceEditorEl.hidden = true;
       setButtonLabel(toggleSourceBtn, '檢視原始碼');

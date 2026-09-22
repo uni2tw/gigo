@@ -36,6 +36,8 @@ window.NotesEditor = (function () {
   var LINK_CARD_HIDE_DELAY_MS = 500;
   var linkOpenModifierActive = false;
 
+  var lastFocusedBlockId = null;
+
   var FORMAT_OPTIONS = [
     { label: '標題 1', type: 'heading', level: 1 },
     { label: '標題 2', type: 'heading', level: 2 },
@@ -126,6 +128,15 @@ window.NotesEditor = (function () {
       closeOpenDropdown();
     });
     document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('focusin', function (e) {
+      if (!container || !container.contains(e.target)) {
+        return;
+      }
+      var row = e.target.closest('[data-id]');
+      if (row) {
+        lastFocusedBlockId = row.dataset.id;
+      }
+    });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Control' || e.key === 'Meta') {
         setLinkOpenModifierActive(true);
@@ -289,13 +300,36 @@ window.NotesEditor = (function () {
     imageBaseDir = baseDir || '';
     closeSearchBar();
     hideLinkCard();
+    lastFocusedBlockId = null;
     setFromPlainBlocks(newBlocks);
     resetHistory();
   }
 
-  function loadFromMarkdownSource(text) {
-    setFromPlainBlocks(window.NotesMarkdown.parseMarkdownToBlocks(text || ''));
+  function loadFromMarkdownSource(text, cursorOffset) {
+    var parsed = window.NotesMarkdown.parseMarkdownToBlocksWithLineMap(text || '');
+    setFromPlainBlocks(parsed.blocks);
     pushHistory(true);
+    if (cursorOffset != null) {
+      var targetBlock = findBlockAtOffset(text || '', parsed.ranges, cursorOffset);
+      if (targetBlock && targetBlock._id) {
+        focusBlockSmart(targetBlock._id, false);
+      }
+    }
+  }
+
+  function findBlockAtOffset(text, ranges, offset) {
+    var targetLine = text.slice(0, offset).split('\n').length - 1;
+    var closest = null;
+    for (var i = 0; i < ranges.length; i++) {
+      var r = ranges[i];
+      if (targetLine >= r.startLine && targetLine < r.endLine) {
+        return r.block;
+      }
+      if (r.startLine <= targetLine) {
+        closest = r.block;
+      }
+    }
+    return closest || (ranges.length ? ranges[0].block : null);
   }
 
   // -- Undo / redo history -----------------------------------------------
@@ -336,11 +370,18 @@ window.NotesEditor = (function () {
   }
 
   function restoreSnapshot(snapJson) {
+    var focusPath = lastFocusedBlockId ? findBlockIndexPath(blocks, lastFocusedBlockId) : null;
     var plain = JSON.parse(snapJson);
     blocks = plain.length ? plain : [{ type: 'list_item', text: '', level: 0, children: [], checked: false }];
     assignIds(blocks);
     render();
     onChange();
+    if (focusPath) {
+      var target = getBlockAtIndexPath(blocks, focusPath);
+      if (target) {
+        lastFocusedBlockId = target._id;
+      }
+    }
   }
 
   function undo() {
@@ -365,6 +406,30 @@ window.NotesEditor = (function () {
 
   function getMarkdownSource() {
     return window.NotesMarkdown.blocksToMarkdown(getBlocks());
+  }
+
+  function getMarkdownSourceWithCursor() {
+    var forSerialize = stripAutoTrailingParagraph(blocks);
+    var result = window.NotesMarkdown.blocksToMarkdownWithLineMap(forSerialize);
+    var focusedId = getFocusedBlockId();
+    var offset = null;
+    if (focusedId && Object.prototype.hasOwnProperty.call(result.lineMap, focusedId)) {
+      offset = lineIndexToCharOffset(result.text, result.lineMap[focusedId]);
+    }
+    return { text: result.text, offset: offset };
+  }
+
+  function getFocusedBlockId() {
+    return lastFocusedBlockId;
+  }
+
+  function lineIndexToCharOffset(text, lineIndex) {
+    var lines = text.split('\n');
+    var offset = 0;
+    for (var i = 0; i < lineIndex && i < lines.length; i++) {
+      offset += lines[i].length + 1;
+    }
+    return offset;
   }
 
   function stripInternal(list) {
@@ -408,6 +473,32 @@ window.NotesEditor = (function () {
       }
     }
     return null;
+  }
+
+  function findBlockIndexPath(list, id) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i]._id === id) {
+        return [i];
+      }
+      var childPath = findBlockIndexPath(list[i].children || [], id);
+      if (childPath) {
+        return [i].concat(childPath);
+      }
+    }
+    return null;
+  }
+
+  function getBlockAtIndexPath(list, path) {
+    var node = null;
+    var current = list;
+    for (var i = 0; i < path.length; i++) {
+      node = current[path[i]];
+      if (!node) {
+        return null;
+      }
+      current = node.children || [];
+    }
+    return node;
   }
 
   function findOwnerBlock(list, childList) {
@@ -2580,6 +2671,7 @@ window.NotesEditor = (function () {
     load: load,
     getBlocks: getBlocks,
     getMarkdownSource: getMarkdownSource,
+    getMarkdownSourceWithCursor: getMarkdownSourceWithCursor,
     loadFromMarkdownSource: loadFromMarkdownSource,
   };
 })();
