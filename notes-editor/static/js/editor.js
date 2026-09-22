@@ -1416,6 +1416,11 @@ window.NotesEditor = (function () {
       applyInlineCommand('strikeThrough');
       return;
     }
+    if (isCtrl && !e.altKey && key === 'k') {
+      e.preventDefault();
+      applyInlineCommand('link');
+      return;
+    }
 
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1427,6 +1432,7 @@ window.NotesEditor = (function () {
         commitChange(true);
         return;
       }
+      autoLinkifyBeforeCaret(textEl);
       var split = splitAtCaret(textEl);
       if (split.atStart && !split.atEnd) {
         insertEmptySiblingBefore(block);
@@ -1754,6 +1760,44 @@ window.NotesEditor = (function () {
     return el;
   }
 
+  var AUTO_LINK_URL_RE = /^(https?:\/\/|www\.)\S+$/i;
+
+  // A bare URL typed as plain text, followed by Enter, becomes a real link
+  // (matching the common convention in Slack/Notion/Google Docs). Only the
+  // whitespace-delimited token immediately before the caret is considered, and
+  // only when the caret sits in plain text (not already inside a link).
+  function autoLinkifyBeforeCaret(textEl) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) {
+      return;
+    }
+    var range = sel.getRangeAt(0);
+    var node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !textEl.contains(node)) {
+      return;
+    }
+    if (findAncestorTag(node, 'A')) {
+      return;
+    }
+    var offset = range.startOffset;
+    var match = node.textContent.slice(0, offset).match(/(\S+)$/);
+    if (!match || !AUTO_LINK_URL_RE.test(match[1])) {
+      return;
+    }
+    var word = match[1];
+    var wordRange = document.createRange();
+    wordRange.setStart(node, offset - word.length);
+    wordRange.setEnd(node, offset);
+    var link = document.createElement('a');
+    link.setAttribute('href', /^https?:\/\//i.test(word) ? word : 'https://' + word);
+    wordRange.surroundContents(link);
+    var newRange = document.createRange();
+    newRange.setStartAfter(link);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+
   function findAncestorTag(node, tagName) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     while (el && el.classList && !el.classList.contains('block-text')) {
@@ -1761,6 +1805,21 @@ window.NotesEditor = (function () {
         return el;
       }
       el = el.parentElement;
+    }
+    return null;
+  }
+
+  // Detects an existing link the way a user would expect "editing a link" to
+  // work: not just a collapsed caret or a selection strictly inside the <a>,
+  // but also a selection that was dragged across the link's boundary into
+  // surrounding plain text (very easy to do by accident). Returns the first
+  // link the range touches, or null if none.
+  function findIntersectingLink(textEl, range) {
+    var links = textEl.querySelectorAll('a');
+    for (var i = 0; i < links.length; i++) {
+      if (range.intersectsNode(links[i])) {
+        return links[i];
+      }
     }
     return null;
   }
@@ -1876,10 +1935,9 @@ window.NotesEditor = (function () {
     } else if (cmd === 'bulletList') {
       convertBlockType(block, textEl, 'list_item', 0);
     } else if (cmd === 'link') {
-      var existingLink = findAncestorTag(range.commonAncestorContainer, 'A');
+      var existingLink = findIntersectingLink(textEl, range);
       if (existingLink) {
-        document.execCommand('unlink', false, null);
-        syncAfterCommand(block, textEl);
+        editLinkUrl(existingLink);
         return;
       }
       var savedRange = range.cloneRange();
@@ -1953,7 +2011,8 @@ window.NotesEditor = (function () {
       }
       return;
     }
-    scheduleHideLinkCard();
+    cancelShowLinkCard();
+    hideLinkCard();
     var textEl = findBlockTextAncestor(range.commonAncestorContainer);
     if (!textEl || !container || !container.contains(textEl)) {
       hideFloatingToolbar();
@@ -2093,6 +2152,10 @@ window.NotesEditor = (function () {
     if (!linkEl || !container || !container.contains(linkEl) || linkOpenModifierActive) {
       return;
     }
+    var sel = window.getSelection();
+    if (sel.rangeCount && !sel.isCollapsed) {
+      return;
+    }
     cancelHideLinkCard();
     var card = ensureLinkCard();
     if (linkCardTargetEl === linkEl && !card.hidden) {
@@ -2154,10 +2217,12 @@ window.NotesEditor = (function () {
   }
 
   function editLinkCardTarget() {
-    var link = linkCardTargetEl;
-    if (!link) {
-      return;
+    if (linkCardTargetEl) {
+      editLinkUrl(linkCardTargetEl);
     }
+  }
+
+  function editLinkUrl(link) {
     var textEl = findBlockTextAncestor(link);
     var rowEl = textEl && textEl.closest('[data-id]');
     var block = rowEl && findBlock(blocks, rowEl.dataset.id);
