@@ -292,6 +292,7 @@ html, body {
   height: 0;
   z-index: 20;
   display: flex;
+  align-items: flex-start;
   justify-content: flex-end;
   gap: 8px;
   overflow: visible;
@@ -307,7 +308,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 9px 16px;
   border-radius: 6px;
   border: 1px solid var(--sidebar-border);
   background: #fff;
