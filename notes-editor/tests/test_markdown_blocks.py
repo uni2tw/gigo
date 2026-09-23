@@ -226,6 +226,35 @@ class MarkdownBlocksTests(unittest.TestCase):
         blocks = parse_markdown_to_blocks('see ![a photo](photo.png) above\n')
         self.assertEqual(blocks[0].type, 'paragraph')
 
+    def test_hr_basic_parse(self):
+        blocks = parse_markdown_to_blocks('above\n\n---\n\nbelow\n')
+        self.assertEqual([b.type for b in blocks], ['paragraph', 'hr', 'paragraph'])
+
+    def test_hr_accepts_asterisks_and_underscores(self):
+        for marker in ('***', '___', '----', '-----'):
+            blocks = parse_markdown_to_blocks(marker + '\n')
+            self.assertEqual(blocks[0].type, 'hr', marker)
+
+    def test_hr_requires_no_other_content_on_the_line(self):
+        blocks = parse_markdown_to_blocks('-- not enough dashes\n')
+        self.assertEqual(blocks[0].type, 'paragraph')
+
+    def test_hr_adjacent_to_another_hr_stays_separate(self):
+        blocks = parse_markdown_to_blocks('---\n---\n')
+        self.assertEqual([b.type for b in blocks], ['hr', 'hr'])
+
+    def test_hr_round_trip(self):
+        text = 'above\n---\nbelow\n'
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        self.assertEqual(serialized, text)
+
+    def test_hr_not_confused_with_table_separator_row(self):
+        text = '| a | b |\n| --- | --- |\n| 1 | 2 |\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'table')
+        self.assertEqual(len(blocks), 1)
+
     def test_code_block_with_language(self):
         text = '```python\nprint(1)\nif True:\n    print(2)\n```\n'
         blocks = parse_markdown_to_blocks(text)

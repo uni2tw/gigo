@@ -50,6 +50,7 @@ window.NotesEditor = (function () {
     { label: '插入圖片', type: 'image', level: 0 },
     { label: '程式碼', type: 'code_block', level: 0 },
     { label: '提示框', type: 'callout', level: 0 },
+    { label: '分隔線', type: 'hr', level: 0 },
   ];
 
   var ICON_LINK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>';
@@ -558,13 +559,13 @@ window.NotesEditor = (function () {
   function renderList(list) {
     var wrapper = document.createElement('div');
     var orderedCounter = 0;
-    list.forEach(function (block) {
+    list.forEach(function (block, index) {
       if (block.type === 'ordered_item') {
         orderedCounter += 1;
       } else {
         orderedCounter = 0;
       }
-      wrapper.appendChild(renderBlock(block, orderedCounter));
+      wrapper.appendChild(renderBlock(block, orderedCounter, index > 0));
     });
     return wrapper;
   }
@@ -832,7 +833,39 @@ window.NotesEditor = (function () {
     return group;
   }
 
-  var NON_TEXT_TYPES = ['image', 'table', 'code_block', 'callout'];
+  function renderHrBlock(block) {
+    var group = document.createElement('div');
+
+    var row = document.createElement('div');
+    row.className = 'block-row block-hr-row';
+    row.dataset.id = block._id;
+    row.appendChild(createInsertBeforeButton(block));
+
+    var wrap = document.createElement('div');
+    wrap.className = 'block-hr-wrap';
+
+    var line = document.createElement('div');
+    line.className = 'block-hr-line';
+    wrap.appendChild(line);
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'block-hr-delete';
+    delBtn.title = '刪除分隔線';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeBlock(block._id);
+      commitChange(true);
+    });
+    wrap.appendChild(delBtn);
+
+    row.appendChild(wrap);
+    group.appendChild(row);
+    return group;
+  }
+
+  var NON_TEXT_TYPES = ['image', 'table', 'code_block', 'callout', 'hr'];
 
   function ensureFollowingParagraph(list, afterIdx) {
     var next = list[afterIdx + 1];
@@ -1197,7 +1230,7 @@ window.NotesEditor = (function () {
     return group;
   }
 
-  function renderBlock(block, orderedIndex) {
+  function renderBlock(block, orderedIndex, hasPrecedingSibling) {
     if (block.type === 'code_block') {
       return renderCodeBlock(block);
     }
@@ -1210,12 +1243,19 @@ window.NotesEditor = (function () {
     if (block.type === 'callout') {
       return renderCalloutBlock(block);
     }
+    if (block.type === 'hr') {
+      return renderHrBlock(block);
+    }
 
     var group = document.createElement('div');
 
     var row = document.createElement('div');
     row.className = 'block-row' + (block.type === 'quote' ? ' block-quote' : '');
     row.dataset.id = block._id;
+    if (block.type === 'heading' && hasPrecedingSibling && block.level <= 3) {
+      row.classList.add('block-row-heading-spaced');
+      row.dataset.headingLevel = String(block.level || 1);
+    }
 
     var toggle = document.createElement('span');
     toggle.className = 'block-collapse-toggle';
@@ -1375,6 +1415,17 @@ window.NotesEditor = (function () {
       block.text = headingMatch[2];
       render();
       focusBlock(block._id, true);
+      commitChange(true);
+      return;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim())) {
+      block.type = 'hr';
+      block.text = '';
+      var list = findParentList(blocks, block._id);
+      var idx = list.indexOf(block);
+      var focusId = ensureFollowingParagraph(list, idx);
+      render();
+      focusBlock(focusId, false);
       commitChange(true);
       return;
     }

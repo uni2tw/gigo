@@ -672,3 +672,32 @@
 - [x] 76.4 使用者確認要修。修正 `insertEmptySiblingBefore`，改用跟 `insertSiblingAfter` 一致的判斷邏輯：`var continued = CONTINUABLE_TYPES.indexOf(block.type) !== -1;`，新區塊型態為 `continued ? block.type : 'paragraph'`
 - [x] 76.5 以隔離測試伺服器驗證：重現 76.2 的情境（`123.md` 的 `67890` 開頭按 Enter），確認新插入的區塊型態正確為 `paragraph`，畫面不再冒出孤立的「•」，存檔後只有一般空白行、沒有字面上的 `- `；回歸測試：游標在清單項目（`list_item`）開頭按 Enter，仍正確延續插入同型態的清單項目；額外測試標題（`heading`）與待辦清單（`checklist_item`）開頭按 Enter，分別正確插入空白段落與延續待辦清單項目型態；瀏覽器主控台無錯誤，Python 測試 65 個維持通過（純前端修正，未變動後端）
 - [x] 76.6 `specs/outline-note-editor/spec.md`「大綱式區塊編輯」需求的「游標在文字最前面按下換行」情境，補充新區塊型態的明確規則（比照「游標在文字結尾按下換行」：清單類型延續同型態，否則為一般段落）；`design.md` 記錄本次的根本原因分析（兩個函式判斷邏輯不一致、其中一個巧合掩蓋問題）與修正方式
+
+## 77. 新增分隔線（`---`）區塊型態
+
+- [x] 77.1 使用者詢問 Markdown 的 `---` 是否有特殊意義，得知標準 Markdown 有「分隔線（thematic break）」與「Setext 標題底線」兩種語意，而這個專案目前把 `---` 當成一般文字段落處理；使用者請我先評估調整範圍
+- [x] 77.2 評估範圍（以既有的 `image` 區塊——同樣是「無文字內容」的區塊型態——為參考基準）：前後端解析/序列化各一份邏輯、`editor.js` 新增 `renderHrBlock` 渲染函式、`NON_TEXT_TYPES` 加入 `'hr'`、CSS 新增區塊樣式、格式選單新增「分隔線」選項；同時做了兩個設計決定並取得使用者同意：(1) 不實作 Setext 標題底線語意，`---` 不論前面是否緊接文字一律當分隔線處理，避免行為難以預測；(2) hr 的解析必須是「單行、不貪心」（比照 `image`／`quote`，而非 `table` 的多行迴圈式吃法），否則相鄰的兩個 `---` 會重蹈先前「相鄰表格合併」的覆轍
+- [x] 77.3 `noteapp/markdown_blocks.py`：新增 `_HR_RE = re.compile(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$')`；解析迴圈裡在 `image` 判斷之後加入 hr 判斷（`Block('hr')`，單行、`i += 1`）；序列化時 `elif block.type == 'hr': lines.append('---')`
+- [x] 77.4 `static/js/markdown.js`：對應新增 `HR_RE`、`parseMarkdownToBlocksWithLineMap` 加入單行 hr 判斷分支（`record()` 用法比照 `image`）、`blocksToMarkdownWithLineMap` 加入 `hr` 序列化分支
+- [x] 77.5 `static/js/editor.js`：新增 `renderHrBlock(block)`（結構比照 `renderImageBlock`：`.block-row.block-hr-row` + `data-id` + `createInsertBeforeButton` + 一條視覺分隔線 `.block-hr-line` + 懸浮才出現的刪除「×」按鈕 `.block-hr-delete`，因為 hr 沒有文字內容、Backspace 沒地方可按）；`renderBlock` 加上 `hr` 分派；`NON_TEXT_TYPES` 加入 `'hr'`；`FORMAT_OPTIONS` 加入 `{ label: '分隔線', type: 'hr', level: 0 }`（沿用格式選單既有的 generic 轉換分支，不需要額外欄位初始化）
+- [x] 77.6 `static/css/style.css`：新增 `.block-row.block-hr-row`／`.block-hr-wrap`／`.block-hr-line`／`.block-hr-delete` 樣式，沿用 `.block-image-*` 的間距與懸浮顯示刪除按鈕的手法
+- [x] 77.7 刻意不處理的項目：`focusBlockSmart` 沒有為 `hr` 加上特殊處理（維持跟 `image`／`callout` 現況一致的「方向鍵移動過去但不會真的聚焦任何東西」小落差）——因為 hr 完全沒有文字內容，沒有明顯「正確」的聚焦目標，貿然加特殊邏輯只是不對稱地解決其中一種區塊型態，而非真正修正這個既有、範圍更廣的小落差
+- [x] 77.8 以隔離測試伺服器驗證：獨立一行的 `---` 正確解析為 `hr` 區塊並正確渲染成一條分隔線；切到原始碼模式再切回來（完整往返）確認 `hr` 區塊不會消失、不會被誤判回段落；連續兩個 `---` 正確解析成兩個獨立的 `hr` 區塊、不合併；表格分隔列（`| --- | --- |`）不受影響、仍正確解析為表格的一部分；插入按鈕、刪除按鈕、格式選單「分隔線」選項三個互動都正確運作；`hr` 是筆記最後一個區塊時，畫面上仍會提供可編輯的空白段落銜接（`NON_TEXT_TYPES` 生效）；瀏覽器主控台無錯誤
+- [x] 77.9 `tests/test_markdown_blocks.py` 新增 6 個測試（基本解析、`***`／`___`／4+個 `-` 皆可辨識、少於 3 個 `-` 不算分隔線、相鄰兩個分隔線不合併、往返序列化、跟表格分隔列不互相干擾），Python 測試共 71 個全數通過
+- [x] 77.10 `specs/outline-note-editor/spec.md` 新增「分隔線區塊」需求（比照「圖片區塊」需求的寫法），涵蓋解析、相鄰不合併、跟表格分隔列不干擾、插入按鈕、刪除、格式選單轉換、最後一個區塊時的可編輯銜接、序列化等情境；`design.md` 記錄本次的評估過程與兩個設計決定的理由
+
+## 78. 標題（H1/H2/H3）上方加間距，跟前面內容有視覺區隔
+
+- [x] 78.1 承接先前「空白段落無法往返保留」的討論，使用者提出另一個方向：不試圖保留人為插入的空白段落，改成針對標題本身，只要上面還有其他內容，就加一點 `margin-top`，用視覺留白取代空白段落來做區隔。評估後認同這個方向更乾淨——純粹是渲染層面的呈現，不用跟 Markdown 的空白行語意搏鬥，也不受切原始碼往返影響
+- [x] 78.2 使用者確認 H1／H2／H3 都要做（一開始只問 `#`／`##`，追問後 H3 也一起加）。實作前先確認一個技術限制：每個區塊外面都包了一層沒有 class 的 wrapper div（`renderList` 裡 `renderBlock` 回傳值直接 append 進共用的 `wrapper`），CSS 相鄰選擇器不容易直接命中同層的另一個 `.block-row`，所以「是否為清單裡第一個項目」這個判斷改在 JS 端做（`renderList` 的 `forEach` 本來就知道 index），不用 CSS 選擇器去猜
+- [x] 78.3 `editor.js`：`renderList` 呼叫 `renderBlock` 時多傳一個 `hasPrecedingSibling`（`index > 0`）參數；`renderBlock` 在 `block.type === 'heading' && hasPrecedingSibling && block.level <= 3` 時，幫 `row` 加上 `block-row-heading-spaced` class 並設定 `row.dataset.headingLevel`（是文件裡第一個區塊、或層級 4 以上的標題都不加，避免文件開頭多餘留白、也避免無意義的 class 出現在不受影響的 H4-6 上）
+- [x] 78.4 `style.css` 新增 `.block-row-heading-spaced[data-heading-level="1|2|3"]` 三條規則。數值幾輪來回調整：第一版依字級比例抓 32px／26px／20px；使用者實測後把 H2 先改成 12px（比 H3 的 20px 還小，層級關係顛倒，有跟使用者提醒這點）、再改成 16px；H3 也從 20px 改成 8px。最終定案：**H1 32px／H2 16px／H3 8px**，層級遞減、符合「越大的標題間距越明顯」的直覺
+- [x] 78.5 以隔離測試伺服器驗證：文件第一個區塊是標題時沒有多餘留白；H1/H2/H3 在「上面還有內容」時正確套用對應的 `margin-top`；H4 標題不會被加上 `block-row-heading-spaced` class（也沒有視覺變化）；一般段落、清單等其他區塊型態不受影響；瀏覽器主控台無錯誤，Python 測試 71 個維持通過（純前端 CSS／JS 調整，未變動解析或序列化邏輯，不影響任何既有測試）
+- [x] 78.6 這個功能純屬編輯器內的渲染呈現，不影響儲存的 Markdown 內容本身（不會多寫入任何字元），因此不需要新增 `specs/outline-note-editor/spec.md` 情境或修改 README 操作說明；`design.md` 記錄本次的方向決定（用渲染層級距代替嘗試保留空白段落）與最終數值調整過程
+
+## 79. 補上分隔線的即時輸入轉換（比照標題 `#` 的即時轉換）
+
+- [x] 79.1 使用者實測任務 77 的分隔線功能後回報：直接在區塊裡打 `---`，畫面不會就地變成分隔線。排查後發現：任務 77 只處理了「解析既有 Markdown 內容」這條路徑（開啟筆記、切原始碼再切回來），沒有處理「使用者正在區塊裡即時輸入」這條路徑——而這個編輯器本來就有一個既有機制：`handleInput` 裡偵測到使用者打出 `# `（或到 `###### `）會立刻把目前區塊即時轉成標題，不需要按 Enter 或用格式選單。分隔線沒有比照這個既有慣例，是漏掉的部分，不是原本就決定不做
+- [x] 79.2 `editor.js` 的 `handleInput`：在既有的標題即時轉換判斷之後，新增 `/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim())` 判斷——只要目前區塊的純文字內容剛好等於 3 個以上同一種字元（`-`／`*`／`_`），就立刻把該區塊轉成 `hr`；轉換後呼叫既有的 `ensureFollowingParagraph(list, idx)`（跟「格式選單轉換為圖片」共用的既有工具函式）確保分隔線後面一定有可編輯的段落，並把焦點移過去——分隔線本身沒有文字內容，直接留在原地會讓游標憑空消失，這樣使用者打完 `---` 後可以無縫接著打字，不會卡住
+- [x] 79.3 以隔離測試伺服器驗證：在區塊裡逐字打 `-`／`-`／`-`（每個字元都觸發真實的 `input` 事件，而非一次貼上），確認打完第三個 `-` 的當下就立即轉成分隔線區塊、且焦點正確移到新產生的可編輯段落；`***`／`___` 同樣正確觸發；只打兩個 `-`（`--`）不會誤觸發，維持一般段落；標題的即時轉換（`## ` 之類）確認不受影響（回歸測試）；瀏覽器主控台無錯誤，Python 測試 71 個維持通過（純前端功能，未變動解析/序列化邏輯）
+- [x] 79.4 `design.md` 記錄本次發現的落差（分隔線沒有比照標題既有的即時輸入轉換慣例）與修正方式；不需要修改 `specs/outline-note-editor/spec.md`，因為「輸入即時轉換」是既有「格式選單轉換為分隔線」與「分隔線解析」這兩個已經涵蓋的能力的另一種觸發方式，不是新的最終狀態行為

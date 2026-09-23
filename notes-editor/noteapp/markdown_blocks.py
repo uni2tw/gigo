@@ -10,6 +10,7 @@ _LIST_RE = re.compile(r'^( *)([-*])\s+(.*)$')
 _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
+_HR_RE = re.compile(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$')
 _FENCE_RE = re.compile(r'^```(\w*)\s*$')
 _CALLOUT_MARKER_RE = re.compile(r'^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$', re.IGNORECASE)
 
@@ -151,6 +152,12 @@ def parse_markdown_to_blocks(text):
             i += 1
             continue
 
+        if _HR_RE.match(raw_line):
+            blocks.append(Block('hr'))
+            list_stack = []
+            i += 1
+            continue
+
         heading_match = _HEADING_RE.match(raw_line)
         if heading_match:
             level = len(heading_match.group(1))
@@ -267,6 +274,8 @@ def blocks_to_markdown(blocks):
                 lines.append((' ' * (depth * INDENT_SIZE)) + '- ' + block.text)
             elif block.type == 'image':
                 lines.append('![' + (block.text or '') + '](' + block.src + ')')
+            elif block.type == 'hr':
+                lines.append('---')
             elif block.type == 'code_block':
                 lines.append('```' + (block.lang or '') + '\n' + block.text + '\n```')
             elif block.type == 'table':

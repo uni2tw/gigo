@@ -8,6 +8,7 @@ window.NotesMarkdown = (function () {
   var TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
   var TABLE_SEP_CELL_RE = /^:?-+:?$/;
   var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
+  var HR_RE = /^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$/;
   var FENCE_RE = /^```(\w*)\s*$/;
   var CALLOUT_MARKER_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i;
 
@@ -134,6 +135,15 @@ window.NotesMarkdown = (function () {
         listStack = [];
         i += 1;
         record(imageBlock, lineStart);
+        continue;
+      }
+
+      if (HR_RE.test(rawLine)) {
+        var hrBlock = { type: 'hr', level: 0, text: '', children: [], checked: false };
+        blocks.push(hrBlock);
+        listStack = [];
+        i += 1;
+        record(hrBlock, lineStart);
         continue;
       }
 
@@ -303,6 +313,8 @@ window.NotesMarkdown = (function () {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- ' + block.text);
         } else if (block.type === 'image') {
           lines.push('![' + (block.text || '') + '](' + block.src + ')');
+        } else if (block.type === 'hr') {
+          lines.push('---');
         } else if (block.type === 'code_block') {
           lines.push('```' + (block.lang || '') + '\n' + block.text + '\n```');
         } else if (block.type === 'table') {
