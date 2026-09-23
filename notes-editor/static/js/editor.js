@@ -181,6 +181,8 @@ window.NotesEditor = (function () {
       }
     });
 
+    container.addEventListener('copy', handleCopy);
+
     container.addEventListener('paste', function (e) {
       var textEl = findBlockTextAncestor(document.activeElement);
       if (!textEl || !container.contains(textEl)) {
@@ -1812,6 +1814,62 @@ window.NotesEditor = (function () {
       el = el.parentElement;
     }
     return el;
+  }
+
+  // Native copy/Selection.toString() silently drops content once a Range
+  // crosses from one contentEditable element into a separate sibling one
+  // (each block has its own contentEditable region), and the raw DOM clone
+  // is polluted with per-block UI chrome (format menu, collapse toggle, ...).
+  // For a selection that spans more than one block, build a clean plain-text
+  // clipboard payload ourselves instead of letting the browser serialize it.
+  function handleCopy(e) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) {
+      return;
+    }
+    var range = sel.getRangeAt(0);
+    var startTextEl = findBlockTextAncestor(range.startContainer);
+    var endTextEl = findBlockTextAncestor(range.endContainer);
+    if (!startTextEl || !endTextEl || !container.contains(startTextEl) || !container.contains(endTextEl)) {
+      return;
+    }
+    if (startTextEl === endTextEl) {
+      return;
+    }
+    var startRow = startTextEl.closest('[data-id]');
+    var endRow = endTextEl.closest('[data-id]');
+    var startBlock = startRow && findBlock(blocks, startRow.dataset.id);
+    var endBlock = endRow && findBlock(blocks, endRow.dataset.id);
+    if (!startBlock || !endBlock) {
+      return;
+    }
+    var list = findParentList(blocks, startBlock._id);
+    var startIdx = list ? list.indexOf(startBlock) : -1;
+    var endIdx = list ? list.indexOf(endBlock) : -1;
+    if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) {
+      return;
+    }
+
+    var firstRange = document.createRange();
+    firstRange.selectNodeContents(startTextEl);
+    firstRange.setStart(range.startContainer, range.startOffset);
+    var firstDiv = document.createElement('div');
+    firstDiv.appendChild(firstRange.cloneContents());
+
+    var lastRange = document.createRange();
+    lastRange.selectNodeContents(endTextEl);
+    lastRange.setEnd(range.endContainer, range.endOffset);
+    var lastDiv = document.createElement('div');
+    lastDiv.appendChild(lastRange.cloneContents());
+
+    var lines = [window.NotesMarkdown.htmlToInlineMarkdown(firstDiv)];
+    for (var i = startIdx + 1; i < endIdx; i++) {
+      lines.push(window.NotesMarkdown.blocksToMarkdown([list[i]]).replace(/\n+$/, ''));
+    }
+    lines.push(window.NotesMarkdown.htmlToInlineMarkdown(lastDiv));
+
+    e.clipboardData.setData('text/plain', lines.join('\n'));
+    e.preventDefault();
   }
 
   var AUTO_LINK_URL_RE = /^(https?:\/\/|www\.)\S+$/i;
