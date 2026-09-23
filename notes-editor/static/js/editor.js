@@ -1583,7 +1583,10 @@ window.NotesEditor = (function () {
   function insertEmptySiblingBefore(block) {
     var list = findParentList(blocks, block._id);
     var idx = list.indexOf(block);
-    var newBlock = { type: 'list_item', text: '', level: 0, children: [], checked: false, _id: nextId() };
+    var continued = CONTINUABLE_TYPES.indexOf(block.type) !== -1;
+    var newBlock = {
+      type: continued ? block.type : 'paragraph', text: '', level: 0, children: [], checked: false, _id: nextId(),
+    };
     list.splice(idx, 0, newBlock);
     render();
     focusBlock(block._id, false);
