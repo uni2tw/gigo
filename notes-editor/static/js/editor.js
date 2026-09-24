@@ -703,6 +703,34 @@ window.NotesEditor = (function () {
   // renders as a real checkbox instead of raw "- [x]" text.
   var TABLE_CELL_CHECKBOX_RE = /^-?\s*\[([ xX]?)\]\s*(.*)$/;
 
+  // Typing "[]" (or "[x]"/"- []" etc.) then a space in a plain table cell
+  // live-converts it to a checkbox, matching the same "type markdown, get an
+  // instant block" convention already used for "# " headings and "---" rules.
+  // Requires the cell to contain *only* the marker plus the just-typed
+  // trailing space(s) -- not a substring match -- so it won't fire while
+  // typing "[]" as part of some other sentence.
+  var TABLE_CELL_CHECKBOX_LIVE_RE = /^-?\s*\[([ xX]?)\]\s+$/;
+
+  function focusTableCellCheckboxLabel(blockId, rowIndex, colIndex) {
+    setTimeout(function () {
+      var rowEl = container.querySelector('[data-id="' + blockId + '"]');
+      if (!rowEl) {
+        return;
+      }
+      var trs = rowEl.querySelectorAll('tbody > tr');
+      var tr = trs[rowIndex];
+      if (!tr) {
+        return;
+      }
+      var checkbox = tr.querySelector('input[data-col="' + colIndex + '"]');
+      var label = checkbox && checkbox.closest('.block-table-checkbox-cell');
+      var trailingEl = label && label.querySelector('.block-table-cell-text');
+      if (trailingEl) {
+        trailingEl.focus();
+      }
+    }, 0);
+  }
+
   function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
     var wrap = document.createElement('label');
     wrap.className = 'block-table-checkbox-cell';
@@ -715,23 +743,23 @@ window.NotesEditor = (function () {
     wrap.appendChild(checkbox);
 
     var trailing = match[2];
-    var trailingEl = null;
-    if (trailing) {
-      trailingEl = document.createElement('span');
-      trailingEl.className = 'block-table-cell-text';
-      trailingEl.contentEditable = 'true';
-      trailingEl.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(trailing);
-      trailingEl.addEventListener('input', function () {
-        var newTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
-        block.rows[rowIndex][colIndex] = '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (newTrailing ? ' ' + newTrailing : '');
-        commitChange(false);
-      });
-      wrap.appendChild(trailingEl);
-    }
+    var trailingEl = document.createElement('span');
+    trailingEl.className = 'block-table-cell-text';
+    trailingEl.contentEditable = 'true';
+    trailingEl.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(trailing);
+    trailingEl.addEventListener('input', function () {
+      var newTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
+      block.rows[rowIndex][colIndex] = '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (newTrailing ? ' ' + newTrailing : '');
+      commitChange(false);
+    });
+    trailingEl.addEventListener('keydown', function (e) {
+      handleTableCellKeydown(e, block, rowIndex, colIndex);
+    });
+    wrap.appendChild(trailingEl);
 
     checkbox.addEventListener('click', function (e) {
       e.stopPropagation();
-      var currentTrailing = trailingEl ? window.NotesMarkdown.htmlToInlineMarkdown(trailingEl) : trailing;
+      var currentTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
       block.rows[rowIndex][colIndex] = '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (currentTrailing ? ' ' + currentTrailing : '');
       commitChange(true);
     });
@@ -791,7 +819,16 @@ window.NotesEditor = (function () {
           text.dataset.col = String(colIndex);
           text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
           text.addEventListener('input', function () {
-            block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(text);
+            var newText = window.NotesMarkdown.htmlToInlineMarkdown(text);
+            var liveMatch = TABLE_CELL_CHECKBOX_LIVE_RE.exec(newText);
+            if (liveMatch) {
+              block.rows[rowIndex][colIndex] = '- [' + (/x/i.test(liveMatch[1]) ? 'x' : ' ') + ']';
+              render();
+              focusTableCellCheckboxLabel(block._id, rowIndex, colIndex);
+              commitChange(true);
+              return;
+            }
+            block.rows[rowIndex][colIndex] = newText;
             commitChange(false);
           });
           text.addEventListener('keydown', function (e) {
