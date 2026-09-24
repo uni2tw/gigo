@@ -703,13 +703,14 @@ window.NotesEditor = (function () {
   // renders as a real checkbox instead of raw "- [x]" text.
   var TABLE_CELL_CHECKBOX_RE = /^-?\s*\[([ xX]?)\]\s*(.*)$/;
 
-  // Typing "[]" (or "[x]"/"- []" etc.) then a space in a plain table cell
-  // live-converts it to a checkbox, matching the same "type markdown, get an
-  // instant block" convention already used for "# " headings and "---" rules.
-  // Requires the cell to contain *only* the marker plus the just-typed
-  // trailing space(s) -- not a substring match -- so it won't fire while
-  // typing "[]" as part of some other sentence.
-  var TABLE_CELL_CHECKBOX_LIVE_RE = /^-?\s*\[([ xX]?)\]\s+$/;
+  // Typing "[]" (or "[x]"/"- []" etc.) then a space at the *start* of a plain
+  // table cell live-converts it to a checkbox, matching the same "type
+  // markdown, get an instant block" convention already used for "# " headings
+  // and "---" rules. Anchored to the start of the cell (not a substring
+  // match) so it won't fire while typing "[]" as part of some other
+  // sentence; any text after the marker (e.g. existing text the user moved
+  // the caret in front of via Home) becomes the checkbox's trailing label.
+  var TABLE_CELL_CHECKBOX_LIVE_RE = /^-?\s*\[([ xX]?)\]\s+(.*)$/;
 
   function focusTableCellCheckboxLabel(blockId, rowIndex, colIndex) {
     setTimeout(function () {
@@ -844,7 +845,8 @@ window.NotesEditor = (function () {
             var newText = window.NotesMarkdown.htmlToInlineMarkdown(text);
             var liveMatch = TABLE_CELL_CHECKBOX_LIVE_RE.exec(newText);
             if (liveMatch) {
-              block.rows[rowIndex][colIndex] = '- [' + (/x/i.test(liveMatch[1]) ? 'x' : ' ') + ']';
+              var liveTrailing = liveMatch[2];
+              block.rows[rowIndex][colIndex] = '- [' + (/x/i.test(liveMatch[1]) ? 'x' : ' ') + ']' + (liveTrailing ? ' ' + liveTrailing : '');
               render();
               focusTableCellCheckboxLabel(block._id, rowIndex, colIndex);
               commitChange(true);
