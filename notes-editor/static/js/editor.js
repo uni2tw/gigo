@@ -1571,6 +1571,22 @@ window.NotesEditor = (function () {
       commitChange(true);
       return;
     }
+    if (/^[-*]\s+$/.test(raw)) {
+      block.type = 'list_item';
+      block.text = '';
+      render();
+      focusBlock(block._id, true);
+      commitChange(true);
+      return;
+    }
+    if (/^\d+\.\s+$/.test(raw)) {
+      block.type = 'ordered_item';
+      block.text = '';
+      render();
+      focusBlock(block._id, true);
+      commitChange(true);
+      return;
+    }
     block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
     commitChange(false);
   }
