@@ -1547,6 +1547,16 @@ window.NotesEditor = (function () {
       commitChange(true);
       return;
     }
+    var checklistLiveMatch = /^(?:[-*]\s*)?\[([ xX]?)\]\s+$/.exec(raw);
+    if (checklistLiveMatch) {
+      block.type = 'checklist_item';
+      block.checked = /x/i.test(checklistLiveMatch[1]);
+      block.text = '';
+      render();
+      focusBlock(block._id, true);
+      commitChange(true);
+      return;
+    }
     block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
     commitChange(false);
   }
@@ -1767,6 +1777,14 @@ window.NotesEditor = (function () {
       return;
     }
     if (list === blocks && list.length <= 1) {
+      var soleBlock = findBlock(blocks, id);
+      if (soleBlock && (soleBlock.type !== 'list_item' || soleBlock.text !== '')) {
+        soleBlock.type = 'list_item';
+        soleBlock.text = '';
+        soleBlock.checked = false;
+        render();
+        focusBlock(soleBlock._id, true);
+      }
       return;
     }
     var block = findBlock(blocks, id);
