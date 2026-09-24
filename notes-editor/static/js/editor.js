@@ -739,8 +739,13 @@ window.NotesEditor = (function () {
   }
 
   function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
-    var wrap = document.createElement('label');
+    var wrap = document.createElement('div');
     wrap.className = 'block-table-checkbox-cell';
+    wrap.addEventListener('click', function (e) {
+      if (e.target === wrap) {
+        trailingEl.focus();
+      }
+    });
 
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
