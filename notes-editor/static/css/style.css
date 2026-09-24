@@ -492,6 +492,18 @@ html, body {
   min-height: 1.2em;
 }
 
+.block-table-checkbox-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.block-table-checkbox-cell .block-table-cell-text {
+  flex: 1;
+  cursor: text;
+}
+
 .block-table th {
   background: var(--hover-bg);
   font-weight: 700;

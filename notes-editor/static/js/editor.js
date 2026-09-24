@@ -634,6 +634,9 @@ window.NotesEditor = (function () {
         return;
       }
       cell.focus();
+      if (cell.tagName === 'INPUT') {
+        return;
+      }
       var range = document.createRange();
       range.selectNodeContents(cell);
       range.collapse(false);
@@ -641,6 +644,102 @@ window.NotesEditor = (function () {
       sel.removeAllRanges();
       sel.addRange(range);
     }, 0);
+  }
+
+  function handleTableCellKeydown(e, block, rowIndex, colIndex) {
+    if (e.key === 'ArrowUp') {
+      if (rowIndex > 0) {
+        e.preventDefault();
+        focusTableCell(block._id, rowIndex - 1, colIndex);
+        return;
+      }
+      var ownerList = findParentList(blocks, block._id);
+      var idx = ownerList.indexOf(block);
+      e.preventDefault();
+      if (idx === 0) {
+        insertParagraphBefore(block, ownerList);
+      } else {
+        focusBlockSmart(ownerList[idx - 1]._id, true);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      if (rowIndex + 1 < block.rows.length) {
+        e.preventDefault();
+        focusTableCell(block._id, rowIndex + 1, colIndex);
+        return;
+      }
+      var ownerListDown = findParentList(blocks, block._id);
+      var next = ownerListDown[ownerListDown.indexOf(block) + 1];
+      if (next) {
+        e.preventDefault();
+        focusBlockSmart(next._id, false);
+      }
+      return;
+    }
+    if (e.key !== 'Tab') {
+      return;
+    }
+    e.preventDefault();
+    var totalCols = block.rows[rowIndex].length;
+    if (!e.shiftKey) {
+      if (colIndex + 1 < totalCols) {
+        focusTableCell(block._id, rowIndex, colIndex + 1);
+      } else if (rowIndex + 1 < block.rows.length) {
+        focusTableCell(block._id, rowIndex + 1, 0);
+      } else {
+        addTableRow(block);
+      }
+    } else if (colIndex - 1 >= 0) {
+      focusTableCell(block._id, rowIndex, colIndex - 1);
+    } else if (rowIndex - 1 >= 0) {
+      focusTableCell(block._id, rowIndex - 1, totalCols - 1);
+    }
+  }
+
+  // A table cell whose entire (trimmed) content is GFM-style checkbox syntax
+  // (with or without the list-item "-" prefix, and tolerating "[]" with no
+  // space for "unchecked" since that's what hand-edited files often contain)
+  // renders as a real checkbox instead of raw "- [x]" text.
+  var TABLE_CELL_CHECKBOX_RE = /^-?\s*\[([ xX]?)\]\s*(.*)$/;
+
+  function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
+    var wrap = document.createElement('label');
+    wrap.className = 'block-table-checkbox-cell';
+
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'block-checkbox';
+    checkbox.checked = /x/i.test(match[1]);
+    checkbox.dataset.col = String(colIndex);
+    wrap.appendChild(checkbox);
+
+    var trailing = match[2];
+    var trailingEl = null;
+    if (trailing) {
+      trailingEl = document.createElement('span');
+      trailingEl.className = 'block-table-cell-text';
+      trailingEl.contentEditable = 'true';
+      trailingEl.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(trailing);
+      trailingEl.addEventListener('input', function () {
+        var newTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
+        block.rows[rowIndex][colIndex] = '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (newTrailing ? ' ' + newTrailing : '');
+        commitChange(false);
+      });
+      wrap.appendChild(trailingEl);
+    }
+
+    checkbox.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var currentTrailing = trailingEl ? window.NotesMarkdown.htmlToInlineMarkdown(trailingEl) : trailing;
+      block.rows[rowIndex][colIndex] = '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (currentTrailing ? ' ' + currentTrailing : '');
+      commitChange(true);
+    });
+    checkbox.addEventListener('keydown', function (e) {
+      handleTableCellKeydown(e, block, rowIndex, colIndex);
+    });
+
+    return wrap;
   }
 
   function renderTableBlock(block) {
@@ -682,66 +781,24 @@ window.NotesEditor = (function () {
           cell.style.textAlign = align;
         }
 
-        var text = document.createElement('span');
-        text.className = 'block-table-cell-text';
-        text.contentEditable = 'true';
-        text.dataset.col = String(colIndex);
-        text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
-        text.addEventListener('input', function () {
-          block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(text);
-          commitChange(false);
-        });
-        text.addEventListener('keydown', function (e) {
-          if (e.key === 'ArrowUp') {
-            if (rowIndex > 0) {
-              e.preventDefault();
-              focusTableCell(block._id, rowIndex - 1, colIndex);
-              return;
-            }
-            var ownerList = findParentList(blocks, block._id);
-            var idx = ownerList.indexOf(block);
-            e.preventDefault();
-            if (idx === 0) {
-              insertParagraphBefore(block, ownerList);
-            } else {
-              focusBlockSmart(ownerList[idx - 1]._id, true);
-            }
-            return;
-          }
-          if (e.key === 'ArrowDown') {
-            if (rowIndex + 1 < block.rows.length) {
-              e.preventDefault();
-              focusTableCell(block._id, rowIndex + 1, colIndex);
-              return;
-            }
-            var ownerListDown = findParentList(blocks, block._id);
-            var next = ownerListDown[ownerListDown.indexOf(block) + 1];
-            if (next) {
-              e.preventDefault();
-              focusBlockSmart(next._id, false);
-            }
-            return;
-          }
-          if (e.key !== 'Tab') {
-            return;
-          }
-          e.preventDefault();
-          var totalCols = block.rows[rowIndex].length;
-          if (!e.shiftKey) {
-            if (colIndex + 1 < totalCols) {
-              focusTableCell(block._id, rowIndex, colIndex + 1);
-            } else if (rowIndex + 1 < block.rows.length) {
-              focusTableCell(block._id, rowIndex + 1, 0);
-            } else {
-              addTableRow(block);
-            }
-          } else if (colIndex - 1 >= 0) {
-            focusTableCell(block._id, rowIndex, colIndex - 1);
-          } else if (rowIndex - 1 >= 0) {
-            focusTableCell(block._id, rowIndex - 1, totalCols - 1);
-          }
-        });
-        cell.appendChild(text);
+        var checkboxMatch = TABLE_CELL_CHECKBOX_RE.exec(cellText.trim());
+        if (checkboxMatch) {
+          cell.appendChild(renderTableCellCheckbox(block, rowIndex, colIndex, checkboxMatch));
+        } else {
+          var text = document.createElement('span');
+          text.className = 'block-table-cell-text';
+          text.contentEditable = 'true';
+          text.dataset.col = String(colIndex);
+          text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
+          text.addEventListener('input', function () {
+            block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(text);
+            commitChange(false);
+          });
+          text.addEventListener('keydown', function (e) {
+            handleTableCellKeydown(e, block, rowIndex, colIndex);
+          });
+          cell.appendChild(text);
+        }
 
         if (rowIndex === 0) {
           var delColBtn = document.createElement('button');
