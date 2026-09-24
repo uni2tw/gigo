@@ -731,6 +731,13 @@ window.NotesEditor = (function () {
     }, 0);
   }
 
+  function clearTableCellCheckbox(block, rowIndex, colIndex) {
+    block.rows[rowIndex][colIndex] = '';
+    render();
+    focusTableCell(block._id, rowIndex, colIndex);
+    commitChange(true);
+  }
+
   function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
     var wrap = document.createElement('label');
     wrap.className = 'block-table-checkbox-cell';
@@ -753,6 +760,11 @@ window.NotesEditor = (function () {
       commitChange(false);
     });
     trailingEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' && trailingEl.textContent === '') {
+        e.preventDefault();
+        clearTableCellCheckbox(block, rowIndex, colIndex);
+        return;
+      }
       handleTableCellKeydown(e, block, rowIndex, colIndex);
     });
     wrap.appendChild(trailingEl);
@@ -764,6 +776,11 @@ window.NotesEditor = (function () {
       commitChange(true);
     });
     checkbox.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        clearTableCellCheckbox(block, rowIndex, colIndex);
+        return;
+      }
       handleTableCellKeydown(e, block, rowIndex, colIndex);
     });
 
