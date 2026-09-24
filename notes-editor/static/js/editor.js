@@ -618,7 +618,7 @@ window.NotesEditor = (function () {
     commitChange(true);
   }
 
-  function focusTableCell(blockId, rowIndex, colIndex) {
+  function focusTableCell(blockId, rowIndex, colIndex, atStart) {
     setTimeout(function () {
       var rowEl = container.querySelector('[data-id="' + blockId + '"]');
       if (!rowEl) {
@@ -639,7 +639,7 @@ window.NotesEditor = (function () {
       }
       var range = document.createRange();
       range.selectNodeContents(cell);
-      range.collapse(false);
+      range.collapse(!!atStart);
       var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
@@ -739,6 +739,13 @@ window.NotesEditor = (function () {
     commitChange(true);
   }
 
+  function revertTableCellCheckboxToText(block, rowIndex, colIndex, trailingEl) {
+    block.rows[rowIndex][colIndex] = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
+    render();
+    focusTableCell(block._id, rowIndex, colIndex, true);
+    commitChange(true);
+  }
+
   function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
     var wrap = document.createElement('div');
     wrap.className = 'block-table-checkbox-cell';
@@ -769,6 +776,11 @@ window.NotesEditor = (function () {
       if (e.key === 'Backspace' && trailingEl.textContent === '') {
         e.preventDefault();
         clearTableCellCheckbox(block, rowIndex, colIndex);
+        return;
+      }
+      if (e.key === 'Backspace' && isCaretAtStart(trailingEl)) {
+        e.preventDefault();
+        revertTableCellCheckboxToText(block, rowIndex, colIndex, trailingEl);
         return;
       }
       handleTableCellKeydown(e, block, rowIndex, colIndex);
