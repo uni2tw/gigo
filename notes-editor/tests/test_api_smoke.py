@@ -37,6 +37,58 @@ class ApiSmokeTests(unittest.TestCase):
         resp = self.client.get('/api/notes/' + path)
         self.assertEqual(resp.get_json()['blocks'][0]['text'], 'Hello')
 
+    def test_save_note_meta_endpoint_returns_updated_at(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+
+        resp = self.client.get('/api/notes/note1.md/meta')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.get_json()['updated_at'], float)
+
+    def test_save_note_succeeds_when_expected_updated_at_matches(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        current = self.client.get('/api/notes/note1.md').get_json()['updated_at']
+
+        blocks = [{'type': 'heading', 'level': 1, 'text': 'Hello', 'children': []}]
+        resp = self.client.put('/api/notes/note1.md', json={'blocks': blocks, 'expected_updated_at': current})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.get_json()['updated_at'], float)
+
+    def test_save_note_rejected_with_409_when_expected_updated_at_stale(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        abs_path = os.path.join(self.notes_root, 'note1.md')
+
+        # Back-date the file's mtime so this test doesn't depend on the
+        # filesystem's timestamp resolution being fine enough to distinguish
+        # two back-to-back writes (observed to be too coarse on this system,
+        # making the "someone else saved first" write below indistinguishable
+        # from the baseline when both happen within the same tick).
+        stale_updated_at = os.path.getmtime(abs_path) - 60
+        os.utime(abs_path, (stale_updated_at, stale_updated_at))
+
+        # Someone else (or another tab) saves first, changing the file's mtime.
+        other_blocks = [{'type': 'heading', 'level': 1, 'text': 'From tab B', 'children': []}]
+        resp = self.client.put('/api/notes/note1.md', json={'blocks': other_blocks, 'expected_updated_at': stale_updated_at})
+        self.assertEqual(resp.status_code, 200)
+
+        my_blocks = [{'type': 'heading', 'level': 1, 'text': 'From tab A', 'children': []}]
+        resp = self.client.put(
+            '/api/notes/note1.md',
+            json={'blocks': my_blocks, 'expected_updated_at': stale_updated_at},
+        )
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.get_json()['error'], 'conflict')
+        self.assertIsInstance(resp.get_json()['updated_at'], float)
+
+        # The conflicting write must not have overwritten tab B's content.
+        resp = self.client.get('/api/notes/note1.md')
+        self.assertEqual(resp.get_json()['blocks'][0]['text'], 'From tab B')
+
+    def test_save_note_without_expected_updated_at_skips_conflict_check(self):
+        self.client.post('/api/nodes', json={'parent': '', 'name': 'note1', 'type': 'note'})
+        blocks = [{'type': 'heading', 'level': 1, 'text': 'No check', 'children': []}]
+        resp = self.client.put('/api/notes/note1.md', json={'blocks': blocks})
+        self.assertEqual(resp.status_code, 200)
+
     def test_delete_and_rename_reflect_in_tree(self):
         self.client.post('/api/nodes', json={'parent': '', 'name': 'folderA', 'type': 'folder'})
         self.client.post('/api/nodes', json={'parent': 'folderA', 'name': 'note1', 'type': 'note'})

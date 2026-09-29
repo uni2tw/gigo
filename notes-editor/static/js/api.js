@@ -45,11 +45,15 @@ window.NotesApi = (function () {
     return request('/api/notes/' + encodeURI(path), { method: 'GET' });
   }
 
-  function saveNote(path, blocks) {
+  function getNoteMeta(path) {
+    return request('/api/notes/' + encodeURI(path) + '/meta', { method: 'GET' });
+  }
+
+  function saveNote(path, blocks, expectedUpdatedAt) {
     return request('/api/notes/' + encodeURI(path), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blocks: blocks }),
+      body: JSON.stringify({ blocks: blocks, expected_updated_at: expectedUpdatedAt }),
     });
   }
 
@@ -72,6 +76,7 @@ window.NotesApi = (function () {
     updateNode: updateNode,
     deleteNode: deleteNode,
     getNote: getNote,
+    getNoteMeta: getNoteMeta,
     saveNote: saveNote,
     uploadImage: uploadImage,
     fileUrl: fileUrl,

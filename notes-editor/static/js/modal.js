@@ -89,8 +89,31 @@ window.NotesModal = (function () {
     });
   }
 
+  function notify(message, actionLabel) {
+    return new Promise(function (resolve) {
+      var root = ensureRoot();
+      root.classList.add('modal-open');
+      root.innerHTML =
+        '<div class="modal-backdrop">' +
+        '<div class="modal-box">' +
+        '<div class="modal-message"></div>' +
+        '<div class="modal-actions">' +
+        '<button class="modal-btn modal-btn-ok"></button>' +
+        '</div></div></div>';
+
+      root.querySelector('.modal-message').textContent = message;
+      root.querySelector('.modal-btn-ok').textContent = actionLabel;
+
+      root.querySelector('.modal-btn-ok').addEventListener('click', function () {
+        close(root);
+        resolve(true);
+      });
+    });
+  }
+
   return {
     prompt: prompt,
     confirm: confirmDialog,
+    notify: notify,
   };
 })();

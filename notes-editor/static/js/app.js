@@ -3,6 +3,9 @@
   var activeParentPath = '';
   var saveTimer = null;
   var saveStatusEl = null;
+  var lastKnownUpdatedAt = null;
+  var hasUnsavedChanges = false;
+  var staleCheckTimer = null;
   var viewMode = 'block';
   var blockEditorEl = null;
   var sourceEditorEl = null;
@@ -154,12 +157,26 @@
     resetViewMode();
     setStatus('載入中…');
 
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    hasUnsavedChanges = false;
+
     window.NotesApi.getNote(node.path).then(function (data) {
       window.NotesEditor.load(data.blocks, parentDirOf(node.path));
+      lastKnownUpdatedAt = data.updated_at;
       setStatus(formatRelativeTime(data.updated_at));
     }).catch(function (err) {
       setStatus('載入失敗：' + err.message);
     });
+  }
+
+  function reloadCurrentNode() {
+    if (!currentNode) {
+      return;
+    }
+    selectNode(currentNode);
   }
 
   function resetViewMode() {
@@ -246,10 +263,25 @@
     }
   }
 
+  var conflictModalOpen = false;
+
+  function notifyConflict(statusText, modalMessage) {
+    setStatus(statusText);
+    if (conflictModalOpen) {
+      return;
+    }
+    conflictModalOpen = true;
+    window.NotesModal.notify(modalMessage, '重新載入').then(function () {
+      conflictModalOpen = false;
+      reloadCurrentNode();
+    });
+  }
+
   function scheduleSave() {
     if (!currentNode) {
       return;
     }
+    hasUnsavedChanges = true;
     setStatus('編輯中…');
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -260,16 +292,38 @@
       }
       var blocks = window.NotesEditor.getBlocks();
       var savingNode = currentNode;
-      window.NotesApi.saveNote(savingNode.path, blocks).then(function () {
+      var savingExpectedUpdatedAt = lastKnownUpdatedAt;
+      window.NotesApi.saveNote(savingNode.path, blocks, savingExpectedUpdatedAt).then(function (result) {
         if (currentNode === savingNode) {
+          hasUnsavedChanges = false;
+          lastKnownUpdatedAt = result.updated_at;
           setStatus('已儲存 ' + new Date().toLocaleTimeString());
         }
       }).catch(function (err) {
         if (currentNode === savingNode) {
-          setStatus('儲存失敗，內容尚未儲存：' + err.message);
+          if (err.status === 409) {
+            notifyConflict('儲存失敗，此筆記已被其他分頁更新', '此筆記已被其他分頁更新，你的變更尚未儲存。');
+          } else {
+            setStatus('儲存失敗，內容尚未儲存：' + err.message);
+          }
         }
       });
     }, 800);
+  }
+
+  function checkForRemoteUpdate() {
+    if (!currentNode || hasUnsavedChanges) {
+      return;
+    }
+    var checkedNode = currentNode;
+    window.NotesApi.getNoteMeta(checkedNode.path).then(function (meta) {
+      if (currentNode === checkedNode && !hasUnsavedChanges && meta.updated_at !== lastKnownUpdatedAt) {
+        notifyConflict('此筆記已被其他分頁更新', '此筆記已被其他分頁更新。');
+      }
+    }).catch(function () {
+      // Ignore transient polling failures (e.g. note briefly unavailable); the
+      // next periodic check or focus event will simply try again.
+    });
   }
 
   function onFolderClicked(node) {
@@ -378,6 +432,14 @@
     toggleSourceBtn.addEventListener('click', toggleViewMode);
     copySourceBtn.addEventListener('click', copyCurrentSource);
     sourceEditorEl.addEventListener('input', scheduleSave);
+
+    staleCheckTimer = setInterval(checkForRemoteUpdate, 20000);
+    window.addEventListener('focus', checkForRemoteUpdate);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) {
+        checkForRemoteUpdate();
+      }
+    });
 
     reloadTree().then(function (tree) {
       restoreFromHash(tree);

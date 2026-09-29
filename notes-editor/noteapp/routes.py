@@ -91,6 +91,17 @@ def get_note_route(note_path):
     })
 
 
+@api_bp.route('/notes/<path:note_path>/meta', methods=['GET'])
+def get_note_meta_route(note_path):
+    """Lightweight endpoint for polling whether a note changed on disk,
+    without re-reading/parsing the full content on every check."""
+    abs_path = resolve_safe_path(_notes_root(), note_path)
+    if not os.path.isfile(abs_path):
+        return jsonify({'error': 'Note not found: %r' % (note_path,)}), 404
+
+    return jsonify({'updated_at': os.path.getmtime(abs_path)})
+
+
 @api_bp.route('/notes/<path:note_path>', methods=['PUT'])
 def save_note_route(note_path):
     abs_path = resolve_safe_path(_notes_root(), note_path)
@@ -98,6 +109,13 @@ def save_note_route(note_path):
         return jsonify({'error': 'Note not found: %r' % (note_path,)}), 404
 
     data = request.get_json(force=True, silent=True) or {}
+
+    expected_updated_at = data.get('expected_updated_at')
+    if expected_updated_at is not None:
+        current_mtime = os.path.getmtime(abs_path)
+        if current_mtime != expected_updated_at:
+            return jsonify({'error': 'conflict', 'updated_at': current_mtime}), 409
+
     blocks = [markdown_blocks.Block.from_dict(b) for b in data.get('blocks', [])]
     text = markdown_blocks.blocks_to_markdown(blocks)
 
@@ -107,7 +125,7 @@ def save_note_route(note_path):
     except OSError as e:
         return jsonify({'error': 'Failed to save note: %s' % (e,)}), 500
 
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'updated_at': os.path.getmtime(abs_path)})
 
 
 @api_bp.route('/notes/<path:note_path>/images', methods=['POST'])
