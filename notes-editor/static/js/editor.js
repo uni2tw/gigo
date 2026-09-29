@@ -225,7 +225,7 @@ window.NotesEditor = (function () {
         return;
       }
       e.preventDefault();
-      pasteBlocksAt(block, parsedBlocks);
+      pasteBlocksAt(block, parsedBlocks, textEl);
     });
 
     container.addEventListener('dragover', function (e) {
@@ -1047,15 +1047,39 @@ window.NotesEditor = (function () {
     return zone;
   }
 
-  function pasteBlocksAt(block, parsedBlocks) {
+  function pasteBlocksAt(block, parsedBlocks, textEl) {
     assignIds(parsedBlocks);
     var list = findParentList(blocks, block._id);
     var idx = list.indexOf(block);
     var isEmpty = NON_TEXT_TYPES.indexOf(block.type) === -1
       && !block.text && (!block.children || !block.children.length);
+
+    // If the user had a non-collapsed selection inside the current block's
+    // text when they pasted, that selection must be replaced -- not left
+    // behind alongside the newly-inserted blocks. Reuse the same
+    // split-at-caret helper Enter-splitting relies on, which already deletes
+    // the selected DOM contents before computing the before/after halves.
+    var afterText = '';
+    if (!isEmpty && textEl) {
+      var sel = window.getSelection();
+      if (sel.rangeCount && !sel.isCollapsed && textEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        var split = splitAtCaret(textEl);
+        block.text = window.NotesMarkdown.htmlToInlineMarkdown(split.beforeNode);
+        afterText = window.NotesMarkdown.htmlToInlineMarkdown(split.afterNode);
+      }
+    }
+
     var insertAt = isEmpty ? idx : idx + 1;
     var removeCount = isEmpty ? 1 : 0;
     list.splice.apply(list, [insertAt, removeCount].concat(parsedBlocks));
+
+    if (afterText) {
+      var afterBlock = {
+        type: 'paragraph', text: afterText, level: 0, children: [], checked: false, _id: nextId(),
+      };
+      list.splice(insertAt + parsedBlocks.length, 0, afterBlock);
+    }
+
     render();
     focusBlockSmart(parsedBlocks[parsedBlocks.length - 1]._id, true);
     commitChange(true);
