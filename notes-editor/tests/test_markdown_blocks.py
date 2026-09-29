@@ -339,7 +339,7 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[0].text, '[!FOO]')
 
     def test_callout_round_trip(self):
-        text = '# Title\n> [!IMPORTANT]\n> line one\n> line two\n- item\n'
+        text = '# Title\n::: important\nline one\nline two\n:::\n- item\n'
         blocks = parse_markdown_to_blocks(text)
         serialized = blocks_to_markdown(blocks)
         self.assertEqual(serialized, text)
@@ -348,6 +348,129 @@ class MarkdownBlocksTests(unittest.TestCase):
         from noteapp.markdown_blocks import Block
         block = Block.from_dict({'type': 'callout', 'text': 'x', 'children': []})
         self.assertEqual(block.calloutKind, 'note')
+
+    def test_callout_legacy_syntax_upgraded_to_fence_on_serialize(self):
+        text = '> [!IMPORTANT]\n> line one\n> line two\n'
+        blocks = parse_markdown_to_blocks(text)
+        serialized = blocks_to_markdown(blocks)
+        self.assertEqual(serialized, '::: important\nline one\nline two\n:::\n')
+
+    def test_callout_fence_basic_parse(self):
+        text = ':::  note\nhello world\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].calloutKind, 'note')
+        self.assertEqual(blocks[0].text, 'hello world')
+
+    def test_callout_fence_multiline_body(self):
+        text = '::: warning\nline one\nline two\nline three\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].calloutKind, 'warning')
+        self.assertEqual(blocks[0].text, 'line one\nline two\nline three')
+
+    def test_callout_fence_all_kinds_case_insensitive(self):
+        for kind in ('note', 'tip', 'important', 'warning', 'caution', 'details'):
+            blocks = parse_markdown_to_blocks('::: %s\nbody\n:::\n' % kind.upper())
+            self.assertEqual(blocks[0].type, 'callout')
+            self.assertEqual(blocks[0].calloutKind, kind)
+
+    def test_callout_fence_empty_body(self):
+        blocks = parse_markdown_to_blocks('::: note\n:::\n')
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].text, '')
+
+    def test_callout_fence_two_adjacent_blocks_no_blank_line_needed(self):
+        text = '::: note\nfirst\n:::\n::: tip\nsecond\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[0].calloutKind, 'note')
+        self.assertEqual(blocks[0].text, 'first')
+        self.assertEqual(blocks[1].calloutKind, 'tip')
+        self.assertEqual(blocks[1].text, 'second')
+
+    def test_callout_fence_unrecognized_kind_falls_back_to_paragraph(self):
+        blocks = parse_markdown_to_blocks('::: foo\nbody\n:::\n')
+        self.assertNotEqual(blocks[0].type, 'callout')
+
+    def test_callout_fence_unclosed_at_eof(self):
+        text = '::: note\nhello\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].type, 'callout')
+        self.assertEqual(blocks[0].text, 'hello')
+
+    def test_callout_fence_custom_title_parsed(self):
+        text = '::: warning STOP\nbody\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks[0].calloutKind, 'warning')
+        self.assertEqual(blocks[0].calloutTitle, 'STOP')
+        self.assertEqual(blocks[0].text, 'body')
+
+    def test_callout_fence_no_title_leaves_calloutTitle_empty(self):
+        blocks = parse_markdown_to_blocks('::: note\nbody\n:::\n')
+        self.assertEqual(blocks[0].calloutTitle, '')
+
+    def test_callout_fence_custom_title_serialized(self):
+        from noteapp.markdown_blocks import Block
+        block = Block('callout', text='body', calloutKind='warning', calloutTitle='STOP')
+        serialized = blocks_to_markdown([block])
+        self.assertEqual(serialized, '::: warning STOP\nbody\n:::\n')
+
+    def test_callout_fence_no_title_serialized_without_suffix(self):
+        from noteapp.markdown_blocks import Block
+        block = Block('callout', text='body', calloutKind='note', calloutTitle='')
+        serialized = blocks_to_markdown([block])
+        self.assertEqual(serialized, '::: note\nbody\n:::\n')
+
+    def test_callout_fence_custom_title_round_trip(self):
+        text = '::: warning STOP\nline one\nline two\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks_to_markdown(blocks), text)
+
+    def test_callout_legacy_syntax_has_no_title(self):
+        blocks = parse_markdown_to_blocks('> [!NOTE]\n> hello\n')
+        self.assertEqual(blocks[0].calloutTitle, '')
+
+    def test_callout_details_nested_blocks_parsed(self):
+        text = '::: details\n# Heading inside\nSome paragraph.\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        details = blocks[0]
+        self.assertEqual(details.calloutKind, 'details')
+        self.assertEqual(len(details.children), 2)
+        self.assertEqual(details.children[0].type, 'heading')
+        self.assertEqual(details.children[0].text, 'Heading inside')
+        self.assertEqual(details.children[1].type, 'paragraph')
+        self.assertEqual(details.children[1].text, 'Some paragraph.')
+
+    def test_callout_details_empty_body_gets_placeholder_paragraph(self):
+        blocks = parse_markdown_to_blocks('::: details\n:::\n')
+        details = blocks[0]
+        self.assertEqual(len(details.children), 1)
+        self.assertEqual(details.children[0].type, 'paragraph')
+        self.assertEqual(details.children[0].text, '')
+
+    def test_callout_details_nested_round_trip(self):
+        text = '::: details Click to expand\n# Heading inside\nSome paragraph.\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        self.assertEqual(blocks_to_markdown(blocks), text)
+
+    def test_callout_details_balances_nested_fence(self):
+        # A callout nested inside a "details" body must not be mistaken for
+        # the details block's own closing fence.
+        text = '::: details outer\n::: tip inner\nnested body\n:::\nafter nested\n:::\n'
+        blocks = parse_markdown_to_blocks(text)
+        details = blocks[0]
+        self.assertEqual(details.calloutKind, 'details')
+        self.assertEqual(len(details.children), 2)
+        self.assertEqual(details.children[0].type, 'callout')
+        self.assertEqual(details.children[0].calloutKind, 'tip')
+        self.assertEqual(details.children[0].text, 'nested body')
+        self.assertEqual(details.children[1].type, 'paragraph')
+        self.assertEqual(details.children[1].text, 'after nested')
+
+    def test_callout_non_details_kind_keeps_flat_text_model(self):
+        blocks = parse_markdown_to_blocks('::: tip\nline one\nline two\n:::\n')
+        self.assertEqual(blocks[0].children, [])
+        self.assertEqual(blocks[0].text, 'line one\nline two')
 
 
 if __name__ == '__main__':

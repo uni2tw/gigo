@@ -10,9 +10,17 @@ window.NotesMarkdown = (function () {
   var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
   var HR_RE = /^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$/;
   var FENCE_RE = /^```(\w*)\s*$/;
+  // Legacy GFM-alert callout syntax (`> [!NOTE]` + `> `-prefixed body lines).
+  // Still recognized on read for backward compatibility with notes written
+  // before the switch to the `:::` fenced-container syntax below, but no
+  // longer written out by the serializer.
   var CALLOUT_MARKER_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i;
 
-  var CALLOUT_KINDS = ['note', 'tip', 'important', 'warning', 'caution'];
+  // VitePress-style `::: kind` ... `:::` fenced container syntax.
+  var CALLOUT_FENCE_START_RE = /^:::\s*([a-zA-Z]+)\s*(.*)$/;
+  var CALLOUT_FENCE_END_RE = /^:::\s*$/;
+
+  var CALLOUT_KINDS = ['note', 'tip', 'important', 'warning', 'caution', 'details'];
 
   function repeatStr(s, n) {
     var out = '';
@@ -163,6 +171,57 @@ window.NotesMarkdown = (function () {
         continue;
       }
 
+      var calloutFenceMatch = CALLOUT_FENCE_START_RE.exec(rawLine.trim());
+      if (calloutFenceMatch && CALLOUT_KINDS.indexOf(calloutFenceMatch[1].toLowerCase()) !== -1) {
+        var fenceKind = calloutFenceMatch[1].toLowerCase();
+        var fenceTitle = calloutFenceMatch[2].trim();
+        var fenceBodyLines = [];
+        var fenceDepth = 1;
+        i += 1;
+        while (i < n && fenceDepth > 0) {
+          var innerStripped = lines[i].trim();
+          if (CALLOUT_FENCE_END_RE.test(innerStripped)) {
+            fenceDepth -= 1;
+            if (fenceDepth === 0) {
+              break;
+            }
+          } else {
+            var innerStartMatch = CALLOUT_FENCE_START_RE.exec(innerStripped);
+            if (innerStartMatch && CALLOUT_KINDS.indexOf(innerStartMatch[1].toLowerCase()) !== -1) {
+              fenceDepth += 1;
+            }
+          }
+          fenceBodyLines.push(lines[i]);
+          i += 1;
+        }
+        i += 1; // skip the closing ':::' (if the fence was left unclosed, this just steps past EOF harmlessly)
+        var fenceCalloutBlock = {
+          type: 'callout',
+          level: 0,
+          text: '',
+          calloutKind: fenceKind,
+          calloutTitle: fenceTitle,
+          children: [],
+          checked: false,
+        };
+        if (fenceKind === 'details') {
+          // "details" is a full nested block container (matching VitePress,
+          // where anything -- images, headings, tables -- can live inside a
+          // container): recursively parse its body as its own mini-document
+          // instead of treating it as flat inline text.
+          var nestedParsed = parseMarkdownToBlocksWithLineMap(fenceBodyLines.join('\n'));
+          fenceCalloutBlock.children = nestedParsed.blocks.length
+            ? nestedParsed.blocks
+            : [{ type: 'paragraph', text: '', level: 0, children: [], checked: false }];
+        } else {
+          fenceCalloutBlock.text = fenceBodyLines.join('\n');
+        }
+        blocks.push(fenceCalloutBlock);
+        record(fenceCalloutBlock, lineStart);
+        listStack = [];
+        continue;
+      }
+
       var calloutMatch = CALLOUT_MARKER_RE.exec(rawLine.trim());
       if (calloutMatch) {
         var calloutKind = calloutMatch[1].toLowerCase();
@@ -300,11 +359,19 @@ window.NotesMarkdown = (function () {
         } else if (block.type === 'quote') {
           lines.push('> ' + block.text);
         } else if (block.type === 'callout') {
-          var calloutKindUp = (block.calloutKind || 'note').toUpperCase();
-          lines.push('> [!' + calloutKindUp + ']');
-          (block.text || '').split('\n').forEach(function (bodyLine) {
-            lines.push('> ' + bodyLine);
-          });
+          var fenceKindOut = block.calloutKind || 'note';
+          lines.push('::: ' + fenceKindOut + (block.calloutTitle ? ' ' + block.calloutTitle : ''));
+          if (fenceKindOut === 'details' && block.children && block.children.length) {
+            // "details" is a full nested block container: its children are
+            // a self-contained mini-document, serialized inside the fence
+            // rather than as flat inline text.
+            emit(block.children, 0);
+          } else {
+            (block.text || '').split('\n').forEach(function (bodyLine) {
+              lines.push(bodyLine);
+            });
+          }
+          lines.push(':::');
         } else if (block.type === 'ordered_item') {
           lines.push(repeatStr(' ', depth * INDENT_SIZE) + orderedCounter + '. ' + block.text);
         } else if (block.type === 'checklist_item') {
@@ -330,7 +397,7 @@ window.NotesMarkdown = (function () {
           lines.push(block.text);
         }
 
-        if (block.children && block.children.length) {
+        if (block.children && block.children.length && block.type !== 'callout') {
           emit(block.children, depth + 1);
         }
 

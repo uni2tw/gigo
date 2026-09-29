@@ -91,6 +91,12 @@ window.NotesEditor = (function () {
       bg: '#ffebe9',
       icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8l5-5z"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="16" r="0.9" fill="currentColor" stroke="none"/></svg>',
     },
+    details: {
+      label: '詳細內容',
+      color: '#57606a',
+      bg: '#f6f8fa',
+      icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    },
   };
 
   var INLINE_BUTTONS = [
@@ -447,6 +453,7 @@ window.NotesEditor = (function () {
         src: b.src || '',
         lang: b.lang || '',
         calloutKind: b.calloutKind || 'note',
+        calloutTitle: b.calloutTitle || '',
         children: stripInternal(b.children || []),
       };
     });
@@ -1306,9 +1313,32 @@ window.NotesEditor = (function () {
     return group;
   }
 
+  function flattenChildrenToPlainText(children) {
+    var lines = [];
+    (children || []).forEach(function (child) {
+      if (child.text) {
+        lines.push(child.text);
+      }
+      if (child.children && child.children.length) {
+        var nested = flattenChildrenToPlainText(child.children);
+        if (nested) {
+          lines.push(nested);
+        }
+      }
+    });
+    return lines.join('\n');
+  }
+
   function renderCalloutBlock(block) {
     if (!block.calloutKind || !CALLOUT_KIND_CONFIG[block.calloutKind]) {
       block.calloutKind = 'note';
+    }
+
+    var isDetails = block.calloutKind === 'details';
+    if (isDetails && block._collapsed === undefined) {
+      // Loaded from file (never explicitly toggled in this session yet):
+      // matches VitePress's "::: details" always starting collapsed on view.
+      block._collapsed = true;
     }
 
     var group = document.createElement('div');
@@ -1321,35 +1351,92 @@ window.NotesEditor = (function () {
     var wrap = document.createElement('div');
     wrap.className = 'block-callout block-callout-' + block.calloutKind;
 
+    var defaultTitle = CALLOUT_KIND_CONFIG[block.calloutKind].label;
+
+    var header = document.createElement('div');
+    header.className = 'block-callout-header';
+
     var iconWrap = document.createElement('span');
-    iconWrap.className = 'block-callout-icon';
+    iconWrap.className = 'block-callout-icon' + (isDetails ? ' block-callout-toggle' : '');
     iconWrap.innerHTML = CALLOUT_KIND_CONFIG[block.calloutKind].icon;
-    wrap.appendChild(iconWrap);
+    if (isDetails) {
+      iconWrap.classList.toggle('collapsed', !!block._collapsed);
+      iconWrap.addEventListener('click', function () {
+        block._collapsed = !block._collapsed;
+        render();
+        focusBlock(block._id, true);
+      });
+    }
+    header.appendChild(iconWrap);
 
-    var text = document.createElement('div');
-    text.className = 'block-text block-callout-text';
-    text.contentEditable = 'true';
-    text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(block.text);
-
-    text.addEventListener('input', function () {
-      block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
+    var titleEl = document.createElement('span');
+    titleEl.className = 'block-callout-title';
+    titleEl.contentEditable = 'true';
+    titleEl.textContent = block.calloutTitle || defaultTitle;
+    titleEl.addEventListener('input', function () {
+      var newTitle = titleEl.textContent;
+      block.calloutTitle = newTitle === defaultTitle ? '' : newTitle;
       commitChange(false);
     });
-    text.addEventListener('keydown', function (e) {
+    titleEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        document.execCommand('insertLineBreak');
-        block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
-        commitChange(false);
-        return;
-      }
-      if (e.key === 'Backspace' && text.textContent === '') {
-        e.preventDefault();
-        removeBlock(block._id);
-        commitChange(true);
+        if (isDetails) {
+          if (block.children && block.children.length) {
+            focusBlock(block.children[0]._id, false);
+          }
+        } else {
+          text.focus();
+        }
       }
     });
-    wrap.appendChild(text);
+    header.appendChild(titleEl);
+
+    wrap.appendChild(header);
+
+    var text;
+    if (isDetails) {
+      // "details" is a full nested block container: its content is a real
+      // list of child blocks (rendered the same way as the top-level
+      // document, or a list item's own children), not a single line of
+      // inline text -- this is what makes images/headings/tables/etc. work
+      // inside it, matching the editing power available outside it.
+      if (!block.children || !block.children.length) {
+        block.children = [{ type: 'paragraph', text: '', level: 0, children: [], checked: false, _id: nextId() }];
+      }
+      var childrenWrap = document.createElement('div');
+      childrenWrap.className = 'block-callout-children';
+      childrenWrap.appendChild(renderList(block.children));
+      if (block._collapsed) {
+        childrenWrap.hidden = true;
+      }
+      wrap.appendChild(childrenWrap);
+    } else {
+      text = document.createElement('div');
+      text.className = 'block-text block-callout-text';
+      text.contentEditable = 'true';
+      text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(block.text);
+
+      text.addEventListener('input', function () {
+        block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
+        commitChange(false);
+      });
+      text.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.execCommand('insertLineBreak');
+          block.text = window.NotesMarkdown.htmlToInlineMarkdown(text);
+          commitChange(false);
+          return;
+        }
+        if (e.key === 'Backspace' && text.textContent === '') {
+          e.preventDefault();
+          removeBlock(block._id);
+          commitChange(true);
+        }
+      });
+      wrap.appendChild(text);
+    }
 
     var kindSelect = document.createElement('select');
     kindSelect.className = 'block-callout-kind-select';
@@ -1362,7 +1449,34 @@ window.NotesEditor = (function () {
     });
     kindSelect.value = block.calloutKind;
     kindSelect.addEventListener('change', function () {
-      block.calloutKind = kindSelect.value;
+      var newKind = kindSelect.value;
+      var wasDetails = block.calloutKind === 'details';
+      var becomingDetails = newKind === 'details';
+      if (becomingDetails && !wasDetails) {
+        // Moving from the flat single-line text model to a real block list:
+        // carry over whatever inline text was already there as the first
+        // (only) child, rather than losing it.
+        block.children = [{
+          type: 'paragraph', text: block.text || '', level: 0, children: [], checked: false, _id: nextId(),
+        }];
+        block.text = '';
+      } else if (!becomingDetails && wasDetails) {
+        // Moving back to a flat single-line text model: best-effort flatten
+        // whatever block content was inside (images/tables/etc. can't
+        // survive this, only their own inline text does).
+        block.text = flattenChildrenToPlainText(block.children);
+        block.children = [];
+      }
+      block.calloutKind = newKind;
+      // A custom title is tied to the kind it was written for (e.g. "STOP"
+      // for a danger callout); switching kind clears it back to that new
+      // kind's own default label rather than carrying over a mismatched one.
+      block.calloutTitle = '';
+      if (becomingDetails) {
+        // Switching a block to "details" mid-edit should stay open so the
+        // user can keep typing, unlike the "collapsed on load" default above.
+        block._collapsed = false;
+      }
       render();
       focusBlock(block._id, true);
       commitChange(true);
@@ -1605,6 +1719,17 @@ window.NotesEditor = (function () {
     }
     if (/^\d+\.\s+$/.test(raw)) {
       block.type = 'ordered_item';
+      block.text = '';
+      render();
+      focusBlock(block._id, true);
+      commitChange(true);
+      return;
+    }
+    var calloutLiveMatch = /^:::\s*([a-zA-Z]+)\s+$/.exec(raw);
+    if (calloutLiveMatch && window.NotesMarkdown.CALLOUT_KINDS.indexOf(calloutLiveMatch[1].toLowerCase()) !== -1) {
+      block.type = 'callout';
+      block.calloutKind = calloutLiveMatch[1].toLowerCase();
+      block.calloutTitle = '';
       block.text = '';
       render();
       focusBlock(block._id, true);
@@ -1870,7 +1995,11 @@ window.NotesEditor = (function () {
     }
     var prevBlock = findBlock(blocks, prevId);
     var list = findParentList(blocks, block._id);
-    if (!prevBlock || !list || prevBlock.type === 'table') {
+    // A "details" callout's own .text is unused while it holds real block
+    // children (see renderCalloutBlock) -- merging into it would silently
+    // discard content into a field nothing ever displays or serializes.
+    var prevIsDetailsContainer = prevBlock && prevBlock.type === 'callout' && prevBlock.calloutKind === 'details';
+    if (!prevBlock || !list || prevBlock.type === 'table' || prevIsDetailsContainer) {
       return false;
     }
 

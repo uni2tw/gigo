@@ -380,6 +380,7 @@ html, body {
 .block-format-trigger {
   width: 20px;
   height: 20px;
+  margin-left: 1rem;
   border: none;
   background: none;
   border-radius: 4px;
@@ -827,17 +828,22 @@ html, body {
 .block-callout {
   position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   border-radius: 8px;
   border: 1px solid transparent;
   padding: 10px 36px 10px 12px;
 }
 
+.block-callout-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .block-callout-icon {
   display: inline-flex;
   flex-shrink: 0;
-  margin-top: 3px;
 }
 
 .block-callout-kind-select {
@@ -871,6 +877,20 @@ html, body {
   min-width: 0;
   font-size: 14px;
   line-height: 1.6;
+  color: var(--text-color);
+  margin-left: 24px;
+}
+
+.block-callout-title {
+  font-weight: 600;
+  font-size: 14px;
+  cursor: text;
+  outline: none;
+}
+
+.block-callout-children {
+  margin-left: 24px;
+  font-size: 14px;
   color: var(--text-color);
 }
 
@@ -923,6 +943,25 @@ html, body {
   background: #ffebe9;
   border-color: #ff818255;
   color: #cf222e;
+}
+
+.block-callout-details {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  color: #57606a;
+}
+
+.block-callout-toggle {
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+.block-callout-toggle.collapsed {
+  transform: rotate(0deg);
+}
+
+.block-callout-toggle:not(.collapsed) {
+  transform: rotate(90deg);
 }
 
 .block-children {

@@ -12,9 +12,17 @@ _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
 _HR_RE = re.compile(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$')
 _FENCE_RE = re.compile(r'^```(\w*)\s*$')
+# Legacy GFM-alert callout syntax (`> [!NOTE]` + `> `-prefixed body lines).
+# Still recognized on read for backward compatibility with notes written
+# before the switch to the `:::` fenced-container syntax below, but no
+# longer written out by the serializer.
 _CALLOUT_MARKER_RE = re.compile(r'^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$', re.IGNORECASE)
 
-CALLOUT_KINDS = ('note', 'tip', 'important', 'warning', 'caution')
+# VitePress-style `::: kind [custom title]` ... `:::` fenced container syntax.
+_CALLOUT_FENCE_START_RE = re.compile(r'^:::\s*([a-zA-Z]+)\s*(.*)$')
+_CALLOUT_FENCE_END_RE = re.compile(r'^:::\s*$')
+
+CALLOUT_KINDS = ('note', 'tip', 'important', 'warning', 'caution', 'details')
 
 
 def _split_table_row(line):
@@ -59,10 +67,10 @@ class Block(object):
     plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind', 'calloutTitle')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None, src='', lang='', calloutKind='note'):
+                 rows=None, align=None, src='', lang='', calloutKind='note', calloutTitle=''):
         self.type = type_
         self.text = text
         self.level = level
@@ -73,6 +81,7 @@ class Block(object):
         self.src = src
         self.lang = lang
         self.calloutKind = calloutKind
+        self.calloutTitle = calloutTitle
 
     def to_dict(self):
         return {
@@ -86,6 +95,7 @@ class Block(object):
             'src': self.src,
             'lang': self.lang,
             'calloutKind': self.calloutKind,
+            'calloutTitle': self.calloutTitle,
         }
 
     @staticmethod
@@ -100,6 +110,7 @@ class Block(object):
             src=d.get('src') or '',
             lang=d.get('lang') or '',
             calloutKind=d.get('calloutKind') or 'note',
+            calloutTitle=d.get('calloutTitle') or '',
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -164,6 +175,41 @@ def parse_markdown_to_blocks(text):
             blocks.append(Block('heading', heading_match.group(2).strip(), level))
             list_stack = []
             i += 1
+            continue
+
+        callout_fence_match = _CALLOUT_FENCE_START_RE.match(raw_line.strip())
+        if callout_fence_match and callout_fence_match.group(1).lower() in CALLOUT_KINDS:
+            fence_kind = callout_fence_match.group(1).lower()
+            fence_title = callout_fence_match.group(2).strip()
+            fence_body_lines = []
+            fence_depth = 1
+            i += 1
+            while i < n and fence_depth > 0:
+                inner_stripped = lines[i].strip()
+                if _CALLOUT_FENCE_END_RE.match(inner_stripped):
+                    fence_depth -= 1
+                    if fence_depth == 0:
+                        break
+                else:
+                    inner_start_match = _CALLOUT_FENCE_START_RE.match(inner_stripped)
+                    if inner_start_match and inner_start_match.group(1).lower() in CALLOUT_KINDS:
+                        fence_depth += 1
+                fence_body_lines.append(lines[i])
+                i += 1
+            i += 1  # skip the closing ':::' (an unclosed fence just steps past EOF harmlessly)
+
+            callout_block = Block('callout', calloutKind=fence_kind, calloutTitle=fence_title)
+            if fence_kind == 'details':
+                # "details" is a full nested block container (matching VitePress,
+                # where anything -- images, headings, tables -- can live inside a
+                # container): recursively parse its body as its own mini-document
+                # instead of treating it as flat inline text.
+                nested_blocks = parse_markdown_to_blocks('\n'.join(fence_body_lines))
+                callout_block.children = nested_blocks if nested_blocks else [Block('paragraph', text='')]
+            else:
+                callout_block.text = '\n'.join(fence_body_lines)
+            blocks.append(callout_block)
+            list_stack = []
             continue
 
         callout_match = _CALLOUT_MARKER_RE.match(raw_line.strip())
@@ -261,10 +307,18 @@ def blocks_to_markdown(blocks):
             elif block.type == 'quote':
                 lines.append('> ' + block.text)
             elif block.type == 'callout':
-                kind = (block.calloutKind or 'note').upper()
-                lines.append('> [!%s]' % kind)
-                for body_line in (block.text or '').split('\n'):
-                    lines.append('> ' + body_line)
+                kind = block.calloutKind or 'note'
+                fence_start = '::: ' + kind + (' ' + block.calloutTitle if block.calloutTitle else '')
+                lines.append(fence_start)
+                if kind == 'details' and block.children:
+                    # "details" is a full nested block container: its children
+                    # are a self-contained mini-document, serialized inside the
+                    # fence rather than as flat inline text.
+                    emit(block.children, 0)
+                else:
+                    for body_line in (block.text or '').split('\n'):
+                        lines.append(body_line)
+                lines.append(':::')
             elif block.type == 'ordered_item':
                 lines.append((' ' * (depth * INDENT_SIZE)) + '%d. ' % ordered_counter + block.text)
             elif block.type == 'checklist_item':
@@ -289,7 +343,7 @@ def blocks_to_markdown(blocks):
             else:
                 lines.append(block.text)
 
-            if block.children:
+            if block.children and block.type != 'callout':
                 emit(block.children, depth + 1)
 
             next_block = block_list[index + 1] if index + 1 < len(block_list) else None
