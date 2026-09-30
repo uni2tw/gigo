@@ -86,6 +86,9 @@ window.NotesEditor = (function () {
   // tree.js), duplicated here rather than shared since editor.js and tree.js
   // are separate, self-contained IIFE modules with no shared icon export.
   var ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
+  // A box with its content escaping out the side -- "dissolve this
+  // container, its content moves out to sit alongside everything else".
+  var ICON_UNWRAP = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="9" height="14" rx="1"/><path d="M15 9h6M18 6l3 3-3 3"/></svg>';
 
   var CALLOUT_KIND_CONFIG = {
     note: {
@@ -1627,6 +1630,19 @@ window.NotesEditor = (function () {
     });
     wrap.appendChild(kindSelect);
 
+    if (isDetails) {
+      var unwrapBtn = document.createElement('button');
+      unwrapBtn.type = 'button';
+      unwrapBtn.className = 'block-callout-unwrap';
+      unwrapBtn.title = '解散為一般區塊';
+      unwrapBtn.innerHTML = ICON_UNWRAP;
+      unwrapBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        unwrapDetailsBlock(block);
+      });
+      wrap.appendChild(unwrapBtn);
+    }
+
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'block-callout-delete';
@@ -2285,6 +2301,34 @@ window.NotesEditor = (function () {
     clearBlockSelection();
     render();
     focusBlock(wrapped[0]._id, false);
+    commitChange(true);
+  }
+
+  // The inverse of convertBlockSelectionToDetails: dissolves a single
+  // existing "details" callout, splicing its children back into the
+  // container's own position in its parent list in place of the container
+  // itself. Like the wrap direction, this moves each child over as-is
+  // (whatever its own type/children already are) rather than flattening
+  // anything, so it's lossless -- unlike switching a details callout to a
+  // different kind via its own dropdown, which has to flatten non-text
+  // content down to plain text because those other kinds have no children
+  // array to hold it.
+  function unwrapDetailsBlock(block) {
+    var parentList = findParentList(blocks, block._id);
+    if (!parentList) {
+      return;
+    }
+    var idx = parentList.indexOf(block);
+    if (idx === -1) {
+      return;
+    }
+    var children = block.children || [];
+    var spliceArgs = [idx, 1].concat(children);
+    Array.prototype.splice.apply(parentList, spliceArgs);
+    render();
+    if (children.length) {
+      focusBlock(children[0]._id, false);
+    }
     commitChange(true);
   }
 
