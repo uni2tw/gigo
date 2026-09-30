@@ -6,9 +6,14 @@ window.NotesEditor = (function () {
   var imageBaseDir = '';
   var idCounter = 0;
   var openDropdown = null;
+  var formatTriggerHoverEl = null;
   var floatingToolbar = null;
   var inlineButtonEls = {};
   var toolbarCopyBtn = null;
+  var toolbarCutBtn = null;
+  var toolbarDetailsBtn = null;
+  var toolbarDeleteBtn = null;
+  var toolbarDivider = null;
   var toolbarCopyMode = false;
   var history = [];
   var historyIndex = -1;
@@ -75,6 +80,11 @@ window.NotesEditor = (function () {
   // copy icon across the app.
   var ICON_COPY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>';
   var ICON_CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var ICON_CUT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 7.5 20 19M20 5 8.5 16.5"/></svg>';
+  // Same trash-can glyph the notes tree uses for "刪除" (ICON_DELETE in
+  // tree.js), duplicated here rather than shared since editor.js and tree.js
+  // are separate, self-contained IIFE modules with no shared icon export.
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
 
   var CALLOUT_KIND_CONFIG = {
     note: {
@@ -190,6 +200,11 @@ window.NotesEditor = (function () {
       if (e.key === 'Escape' && blockSelectionRange) {
         clearBlockSelection(true);
       }
+      if (blockSelectionRange && !isCtrl && !e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        deleteBlockSelection();
+        return;
+      }
       var active = document.activeElement;
       var withinSearchBar = searchBar && !searchBar.hidden && searchBar.contains(active);
       if (active && active !== document.body && !container.contains(active) && !withinSearchBar) {
@@ -207,6 +222,7 @@ window.NotesEditor = (function () {
     });
 
     container.addEventListener('copy', handleCopy);
+    container.addEventListener('cut', handleCut);
 
     container.addEventListener('paste', function (e) {
       var textEl = findBlockTextAncestor(document.activeElement);
@@ -342,6 +358,49 @@ window.NotesEditor = (function () {
       cancelShowLinkCard();
       scheduleHideLinkCard();
     });
+
+    // Reveals the "Aa" format-menu trigger only for the exact block row under
+    // the pointer. A plain `.block-row:hover .block-format-trigger` CSS rule
+    // can't express that: CSS :hover propagates to every ancestor element, so
+    // when a "details" callout's own row wraps its child blocks' rows (see
+    // renderCalloutBlock's .block-callout-children), hovering any one child
+    // also puts the outer callout row into :hover -- and a plain descendant
+    // selector then reveals every .block-format-trigger nested anywhere
+    // inside that outer row, not just the one under the cursor. Tracking the
+    // innermost hovered row via closest() and toggling a class on just that
+    // row's own trigger (found by findOwnFormatTrigger, which likewise uses
+    // closest() to reject a trigger that actually belongs to a still-deeper
+    // nested row) sidesteps the ancestor-bleed entirely.
+    container.addEventListener('mouseover', function (e) {
+      var row = e.target.closest && e.target.closest('.block-row');
+      var trigger = row ? findOwnFormatTrigger(row) : null;
+      if (trigger === formatTriggerHoverEl) {
+        return;
+      }
+      if (formatTriggerHoverEl) {
+        formatTriggerHoverEl.classList.remove('trigger-hover-visible');
+      }
+      formatTriggerHoverEl = trigger;
+      if (formatTriggerHoverEl) {
+        formatTriggerHoverEl.classList.add('trigger-hover-visible');
+      }
+    });
+    container.addEventListener('mouseleave', function () {
+      if (formatTriggerHoverEl) {
+        formatTriggerHoverEl.classList.remove('trigger-hover-visible');
+        formatTriggerHoverEl = null;
+      }
+    });
+  }
+
+  function findOwnFormatTrigger(row) {
+    var candidates = row.querySelectorAll('.block-format-trigger');
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i].closest('.block-row') === row) {
+        return candidates[i];
+      }
+    }
+    return null;
   }
 
   function setFromPlainBlocks(plainBlocks) {
@@ -425,11 +484,47 @@ window.NotesEditor = (function () {
     onChange();
   }
 
+  // _collapsed is deliberately left out of the undo-tracked snapshot itself
+  // (snapshotBlocks -> stripInternal) since it's view state, not content --
+  // but restoreSnapshot rebuilds the whole tree from scratch, so without
+  // this every details block would revert to "never toggled" and collapse
+  // itself on every Ctrl+Z/Ctrl+Shift+Z, even one undoing an unrelated text
+  // edit made while that details block was sitting open. Carrying it over
+  // by tree position covers the common case (undo/redo that doesn't change
+  // a details block's position); a structural change around it just falls
+  // back to the existing "first time seeing this block" default.
+  function collectCollapsedStates(list, path, map) {
+    list.forEach(function (b, i) {
+      var p = path.concat(i).join('.');
+      if (b.type === 'callout' && b.calloutKind === 'details' && typeof b._collapsed === 'boolean') {
+        map[p] = b._collapsed;
+      }
+      if (b.children && b.children.length) {
+        collectCollapsedStates(b.children, path.concat(i), map);
+      }
+    });
+  }
+
+  function applyCollapsedStates(list, path, map) {
+    list.forEach(function (b, i) {
+      var p = path.concat(i).join('.');
+      if (b.type === 'callout' && b.calloutKind === 'details' && Object.prototype.hasOwnProperty.call(map, p)) {
+        b._collapsed = map[p];
+      }
+      if (b.children && b.children.length) {
+        applyCollapsedStates(b.children, path.concat(i), map);
+      }
+    });
+  }
+
   function restoreSnapshot(snapJson) {
     var focusPath = lastFocusedBlockId ? findBlockIndexPath(blocks, lastFocusedBlockId) : null;
+    var collapsedStates = {};
+    collectCollapsedStates(blocks, [], collapsedStates);
     var plain = JSON.parse(snapJson);
     blocks = plain.length ? plain : [{ type: 'list_item', text: '', level: 0, children: [], checked: false }];
     assignIds(blocks);
+    applyCollapsedStates(blocks, [], collapsedStates);
     render();
     onChange();
     if (focusPath) {
@@ -2085,6 +2180,18 @@ window.NotesEditor = (function () {
     if (toolbarCopyBtn) {
       toolbarCopyBtn.hidden = !on;
     }
+    if (toolbarCutBtn) {
+      toolbarCutBtn.hidden = !on;
+    }
+    if (toolbarDetailsBtn) {
+      toolbarDetailsBtn.hidden = !on;
+    }
+    if (toolbarDeleteBtn) {
+      toolbarDeleteBtn.hidden = !on;
+    }
+    if (toolbarDivider) {
+      toolbarDivider.hidden = !on;
+    }
   }
 
   function showBlockSelectionCopyBtn(startId, endId) {
@@ -2114,6 +2221,120 @@ window.NotesEditor = (function () {
     }
     setToolbarCopyMode(false);
     hideFloatingToolbar();
+  }
+
+  // Wraps the selected blocks into a new "details" callout in place. Each
+  // selected block (with whatever children it already has) is moved as-is
+  // into the new container's children -- nothing inside is flattened or
+  // re-parsed, so images/tables/nested callouts/etc. all survive intact.
+  // Only supported when the selection's start and end are siblings in the
+  // same array: flattenVisibleBlocks (which blockSelectionRange positions
+  // are indices into) walks depth-first, so a selection whose start and end
+  // sit at different nesting levels doesn't correspond to a contiguous,
+  // well-defined splice -- there's no single array to cut a coherent range
+  // out of, so that case is declined rather than guessing.
+  function convertBlockSelectionToDetails() {
+    if (!blockSelectionRange) {
+      return;
+    }
+    var startId = blockSelectionRange.startId;
+    var endId = blockSelectionRange.endId;
+    var parentList = findParentList(blocks, startId);
+    var endParentList = findParentList(blocks, endId);
+    if (!parentList || parentList !== endParentList) {
+      clearBlockSelection(true);
+      window.NotesModal.notify('這個選取範圍跨越不同層級的區塊，暫時無法轉換成「詳細內容」。', '好');
+      return;
+    }
+    var startIdx = parentList.findIndex(function (b) { return b._id === startId; });
+    var endIdx = parentList.findIndex(function (b) { return b._id === endId; });
+    if (startIdx === -1 || endIdx === -1) {
+      return;
+    }
+    var lo = Math.min(startIdx, endIdx);
+    var hi = Math.max(startIdx, endIdx);
+    var wrapped = parentList.splice(lo, hi - lo + 1);
+    var detailsBlock = {
+      _id: nextId(),
+      type: 'callout',
+      text: '',
+      level: 0,
+      checked: false,
+      rows: [],
+      align: [],
+      src: '',
+      lang: '',
+      calloutKind: 'details',
+      calloutTitle: '',
+      children: wrapped,
+      _collapsed: false,
+    };
+    parentList.splice(lo, 0, detailsBlock);
+    clearBlockSelection();
+    render();
+    focusBlock(wrapped[0]._id, false);
+    commitChange(true);
+  }
+
+  // Deletes every block in the current cross-block selection, each with its
+  // own nested content intact -- unlike the single-block removeBlock (used
+  // by the trash button / empty-Backspace-merge), which deliberately
+  // "orphans" a removed block's children back into its own parent list, a
+  // bulk selection delete removes everything the user selected, matching
+  // what Ctrl+C/the copy button would have copied (so Cut = Copy + Delete
+  // stays exactly symmetric, with no surprise leftovers). Only the
+  // "top-level" selected blocks (ones whose own parent block, if any, isn't
+  // itself also selected) need removing directly -- removing a block's
+  // array entry naturally takes its whole subtree with it.
+  function deleteBlockSelection() {
+    if (!blockSelectionRange) {
+      return;
+    }
+    var seq = flattenVisibleBlocks(blocks, []);
+    var startIdx = seq.findIndex(function (b) { return b._id === blockSelectionRange.startId; });
+    var endIdx = seq.findIndex(function (b) { return b._id === blockSelectionRange.endId; });
+    if (startIdx === -1 || endIdx === -1) {
+      clearBlockSelection(true);
+      return;
+    }
+    var lo = Math.min(startIdx, endIdx);
+    var hi = Math.max(startIdx, endIdx);
+    var selected = seq.slice(lo, hi + 1);
+    var topLevel = selected.filter(function (b) {
+      var parentList = findParentList(blocks, b._id);
+      var parentBlock = parentList ? findOwnerBlock(blocks, parentList) : null;
+      return !parentBlock || selected.indexOf(parentBlock) === -1;
+    });
+
+    // Captured before mutating: seq[lo-1]/seq[hi+1] sit just outside the
+    // selected range, so neither can ever be one of the blocks being removed.
+    var focusId = adjacentVisibleBlockId(seq[lo]._id, -1) || adjacentVisibleBlockId(seq[hi]._id, 1);
+
+    var touchedLists = [];
+    topLevel.forEach(function (b) {
+      var list = findParentList(blocks, b._id);
+      if (list && touchedLists.indexOf(list) === -1) {
+        touchedLists.push(list);
+      }
+    });
+    touchedLists.forEach(function (list) {
+      var kept = list.filter(function (b) { return topLevel.indexOf(b) === -1; });
+      list.length = 0;
+      Array.prototype.push.apply(list, kept);
+    });
+
+    if (blocks.length === 0) {
+      var placeholder = { _id: nextId(), type: 'list_item', text: '', level: 0, children: [], checked: false };
+      blocks.push(placeholder);
+      focusId = placeholder._id;
+    }
+
+    clearBlockSelection();
+    render();
+    if (focusId) {
+      focusBlock(focusId, true);
+    }
+    commitChange(true);
   }
 
   function handleDragSelectMove(e) {
@@ -2473,6 +2694,21 @@ window.NotesEditor = (function () {
     e.preventDefault();
   }
 
+  // Only handles the custom cross-block selection; a native (single- or
+  // multi-block) text selection falls through to the browser's own default
+  // cut behavior, same scope as handleCopy above.
+  function handleCut(e) {
+    if (!blockSelectionRange) {
+      return;
+    }
+    var blockSelText = getBlockSelectionMarkdown();
+    if (blockSelText) {
+      e.clipboardData.setData('text/plain', blockSelText);
+      e.preventDefault();
+    }
+    deleteBlockSelection();
+  }
+
   var AUTO_LINK_URL_RE = /^(https?:\/\/|www\.)\S+$/i;
 
   // A bare URL typed as plain text, followed by Enter, becomes a real link
@@ -2619,6 +2855,62 @@ window.NotesEditor = (function () {
       copyBlockSelectionViaToolbar();
     });
     floatingToolbar.appendChild(toolbarCopyBtn);
+
+    toolbarCutBtn = document.createElement('button');
+    toolbarCutBtn.type = 'button';
+    toolbarCutBtn.className = 'inline-toolbar-btn';
+    toolbarCutBtn.title = '剪下';
+    toolbarCutBtn.innerHTML = ICON_CUT;
+    toolbarCutBtn.hidden = true;
+    toolbarCutBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    toolbarCutBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      cutBlockSelectionViaToolbar();
+    });
+    floatingToolbar.appendChild(toolbarCutBtn);
+
+    toolbarDeleteBtn = document.createElement('button');
+    toolbarDeleteBtn.type = 'button';
+    toolbarDeleteBtn.className = 'inline-toolbar-btn';
+    toolbarDeleteBtn.title = '刪除';
+    toolbarDeleteBtn.innerHTML = ICON_TRASH;
+    toolbarDeleteBtn.hidden = true;
+    toolbarDeleteBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    toolbarDeleteBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      deleteBlockSelection();
+    });
+    floatingToolbar.appendChild(toolbarDeleteBtn);
+
+    // Separates "act on the selection as-is" (copy/cut/delete) from "change
+    // its structure" (convert to details) -- only relevant in copy mode, so
+    // it's hidden/shown by setToolbarCopyMode right alongside the buttons.
+    toolbarDivider = document.createElement('span');
+    toolbarDivider.className = 'inline-toolbar-divider';
+    toolbarDivider.hidden = true;
+    floatingToolbar.appendChild(toolbarDivider);
+
+    // Reuses the same collapse-chevron icon the "details" callout itself
+    // shows elsewhere in the app, so this button reads as "turn into that"
+    // rather than introducing a new, unrelated glyph.
+    toolbarDetailsBtn = document.createElement('button');
+    toolbarDetailsBtn.type = 'button';
+    toolbarDetailsBtn.className = 'inline-toolbar-btn';
+    toolbarDetailsBtn.title = '轉換為「詳細內容」';
+    toolbarDetailsBtn.innerHTML = CALLOUT_KIND_CONFIG.details.icon;
+    toolbarDetailsBtn.hidden = true;
+    toolbarDetailsBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    toolbarDetailsBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      convertBlockSelectionToDetails();
+    });
+    floatingToolbar.appendChild(toolbarDetailsBtn);
 
     document.body.appendChild(floatingToolbar);
     return floatingToolbar;
@@ -2900,6 +3192,29 @@ window.NotesEditor = (function () {
     } else {
       fallbackCopyText(text);
       showCopiedFeedback();
+    }
+  }
+
+  // Unlike copyBlockSelectionViaToolbar, there's no "already cut" feedback
+  // step: deleteBlockSelection() clears the selection (and with it, this
+  // toolbar) immediately afterward, so the button wouldn't be around to see
+  // it change anyway.
+  function cutBlockSelectionViaToolbar() {
+    var text = getBlockSelectionMarkdown();
+    if (!text) {
+      return;
+    }
+    var afterCopyAttempt = function () {
+      deleteBlockSelection();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(afterCopyAttempt, function () {
+        fallbackCopyText(text);
+        afterCopyAttempt();
+      });
+    } else {
+      fallbackCopyText(text);
+      afterCopyAttempt();
     }
   }
 

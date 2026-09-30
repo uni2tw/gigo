@@ -1252,6 +1252,62 @@ Python 測試新增 4 個（`meta` 端點、`expected_updated_at` 相符存檔�
 
 使用者確認過目前定位邏輯（貼在選取範圍正上方、水平置中）後，要求嘗試改成靠左對齊。修正很單純：`showBlockSelectionCopyBtn` 的水平定位從「以選取範圍整體寬度置中」改成直接貼齊選取範圍的左邊界（`rect.left`），只調整跨區塊選取這個情境，一般單一區塊文字選取的置中邏輯（`showFloatingToolbarAt`）不受影響。跨區塊選取的邊界矩形通常撐滿整個編輯欄寬度，置中會讓按鈕跑到欄位正中央、離實際選取內容很遠，靠左對齊更貼近選取到的內容本身。已用隔離測試伺服器驗證並截圖給使用者確認，一般單一區塊選取的置中效果不受影響。
 
+### 跨區塊選取新增「轉換為詳細內容」按鈕
+
+使用者先詢問「多行選取後轉換成 details 或 info 的難易度」。評估：details 難度中等偏低，既有的 `renderList`/`renderBlock` 泛用渲染管線與任務 99 已經寫好的「單一區塊轉 details」邏輯（把 `block.text` 包成一個子區塊塞進 `children`）都能重用，主要工作只是把「包一個區塊」推廣成「整批搬移一段連續的兄弟區塊」，加上一個觸發入口；風險在於選取範圍如果跨越不同巢狀層級（例如一端在某個既有 details 容器內、另一端在外層），這些區塊不在同一個陣列裡，搬移語意會不明確。info 等其餘 5 種扁平純文字種類機制上更簡單（沒有 `children`，理論上只要攤平成一行文字）但一定有損——圖片/表格/程式碼區塊等非純文字內容會直接消失，除非先把這 5 種也升級成跟 details 一樣的容器模型，那是一次性、範圍大得多的架構調整。使用者選擇先做 details。
+
+**實作**：浮動格式工具列的複製模式新增第二顆按鈕（圖示重用 `CALLOUT_KIND_CONFIG.details.icon`，跟畫面上其他地方代表「詳細內容」的圖示保持一致）。核心邏輯 `convertBlockSelectionToDetails`：用既有的 `findParentList` 分別找出選取範圍起訖兩個區塊各自所在的陣列——不同陣列（跨巢狀層級）就跳出提示、不做任何變更；同一個陣列（同層級連續兄弟區塊，預期的主要情境）就用 `splice` 把這段區塊整批搬出來，包成一個新的 `{type:'callout', calloutKind:'details', children: <搬出來的區塊>, ...}`，插回原本位置。刻意不對被搬移的區塊做任何攤平或重新解析——各自原本的 `children`（圖片、表格、程式碼區塊、甚至巢狀 callout）都完整保留，這是相對於「攤平成一行純文字」的 info 路線最主要的優勢。轉換完成後聚焦到新容器第一個子區塊開頭、觸發一次可被整批復原的存檔快照，容器預設展開（不是收合狀態）方便接續編輯。
+
+已用隔離測試伺服器驗證三種情境：(1) 一般情境——同層級連續段落（含連結）正確包成 details、內容完整保留、預設展開，`Ctrl+Z` 正確整批復原，存檔重讀後 `::: details` fence 正確序列化/解析；(2) 拒絕情境——選取範圍從既有 details 容器內部跨到容器外部，正確跳出提示、不做任何搬移；(3) 巢狀情境——選取範圍完全落在既有 details 容器內部，正確在裡面再包一層巢狀 details，存檔後兩層 fence 都正確序列化。純前端功能，未變動 Python 解析/序列化邏輯。
+
+### 跨區塊選取新增 CUT 與 DELETE
+
+使用者接著問「跨行選取時，可實作 CUT 和 DELETE 嗎?」。評估：兩者都比 details 轉換更容易。details 轉換需要一個「單一插入點」才能把選取範圍包成一個新容器塞回去，因此才需要限制起訖區塊必須是同一層級的連續兄弟區塊；但刪除不需要插入任何東西，可以對選取範圍內每個「頂層被選取區塊」各自獨立處理，不管它們原本活在哪個陣列/層級，因此不需要 details 轉換那樣的同層級限制。CUT 則幾乎是「複製 + 刪除」的組合，複製邏輯（`getBlockSelectionMarkdown`）已經存在。使用者確認兩個都做。
+
+**實作**：`deleteBlockSelection` 從攤平序列切出選取範圍，用既有的 `findParentList` 搭配 `findOwnerBlock` 篩出「頂層被選取區塊」——如果一個被選取區塊自己的父區塊也在被選取清單裡，就跳過它（會隨父區塊一起整個被移除，不需要另外處理）；否則就是需要直接從其所在陣列移除的頂層節點。這裡刻意**不**比照既有單一區塊刪除（`removeBlock`）那種「把子區塊過繼回父層」的孤兒收養邏輯——批次刪除選取範圍時，使用者的意圖就是「連同內容整個刪掉」，這樣寫也讓 `Ctrl+X` 剪下的內容跟複製/剪貼簿裡的文字完全對得上（不多不少，呼應 `getBlockSelectionMarkdown` 序列化整個子樹的既有行為，讓 Cut 精確等於「Copy + Delete」，不會有選了但沒剪到、或剪到了選取範圍以外內容的落差）。
+
+聚焦位置在實際刪除**之前**先用既有的 `adjacentVisibleBlockId` 取得選取範圍前一個／後一個攤平序列位置的區塊 id（這兩個位置在攤平序列裡必定落在選取範圍之外，保證不會是即將被刪除的區塊）；如果選取範圍涵蓋了整份文件所有頂層區塊，刪除後 `blocks` 陣列會變空，比照既有 `removeBlock` 對「不能刪光最後一個區塊」的既定慣例，補上一個空白 `list_item` 佔位區塊並把焦點移過去。
+
+鍵盤與剪貼簿事件串接：文件層級 `keydown` 監聽器裡（原本已有 `Escape` 清空選取的判斷式那段）新增判斷——`blockSelectionRange` 有效且沒按 Ctrl/Alt 時按下 `Delete`/`Backspace`，直接呼叫 `deleteBlockSelection` 並 `preventDefault`；新增 `handleCut`（跟既有 `handleCopy` 平行的寫法，只處理 `blockSelectionRange` 這個情境，一般原生選取的剪下維持瀏覽器預設行為），寫入剪貼簿文字後呼叫 `deleteBlockSelection`。
+
+已用隔離測試伺服器驗證：`Delete` 鍵正確刪除選取範圍、焦點正確落在前一個區塊、`Ctrl+Z` 正確整批復原；真實 `cut` 事件（含真實 `ClipboardEvent`/`DataTransfer`）正確寫入剪貼簿並同時刪除，剪貼簿內容跟複製按鈕寫入的內容完全一致；選取整份文件所有區塊刪除後正確留下一個可編輯的空白佔位區塊；回歸測試確認一般（非選取模式）的單字元 Backspace/輸入不受影響。純前端功能，未變動 Python 解析/序列化邏輯。
+
+### 浮動工具列補上「剪下」與「刪除」按鈕
+
+使用者回報：任務 111 只做了鍵盤（`Delete`／`Backspace`）與剪貼簿事件（`Ctrl+X`）這兩條路徑，畫面上的工具列完全沒有對應的可見按鈕，跟複製、轉換為詳細內容這兩個已經有可見按鈕的情境不一致——要的是「工具列上要有看得到、點得到的按鈕」。
+
+**實作**：新增 `ICON_CUT`（剪刀圖示，App 裡先前沒有現成的可重用）與 `ICON_TRASH`（直接複製 `tree.js` 的 `ICON_DELETE` 垃圾桶圖示路徑，兩個模組是各自獨立的 IIFE、沒有共用圖示匯出機制，只能重複定義同一份路徑，維持跟「刪除筆記」既有視覺語彙一致）。工具列新增 `toolbarCutBtn`（緊接在複製按鈕之後）與 `toolbarDeleteBtn`（緊接在轉換為詳細內容按鈕之後），一樣由 `setToolbarCopyMode` 統一控制顯示/隱藏。`toolbarDeleteBtn` 直接呼叫既有的 `deleteBlockSelection`；新增 `cutBlockSelectionViaToolbar`，寫入剪貼簿後接著呼叫 `deleteBlockSelection`——刻意不比照複製按鈕顯示「已複製」的暫時圖示回饋，因為 `deleteBlockSelection` 執行完會清空選取狀態、連帶把整條工具列一起藏起來，按鈕根本不會留在畫面上讓使用者看到回饋動畫。工具列最終按鈕順序：複製、剪下、轉換為詳細內容、刪除。
+
+已用隔離測試伺服器驗證並截圖給使用者確認：跨區塊選取後工具列正確同時顯示 4 顆按鈕；點擊「刪除」正確整批刪除、`Ctrl+Z` 正確復原；點擊「剪下」正確整批刪除且剪貼簿寫入無主控台錯誤。純前端修正，未重新執行 Python 測試套件。
+
+### 工具列按鈕分組：複製/剪下/刪除放左邊，分隔線後轉換為詳細內容放右邊
+
+使用者詢問「適合將 4 個按鈕，details 的部份放右邊，用 divide line 區隔嗎?」——探索性問題，先給評估：複製/剪下/刪除是「操作選取範圍本身要不要保留」的通用動作，轉換為詳細內容是「改變內容組織結構」，性質不同，適合分組；同時點出另一種可能分法（刪除是破壞性動作，也可考慮跟「轉換」一起歸類到需要更謹慎點擊的那一側）。使用者確認採用原本提議的分法。
+
+**實作**：調整 `ensureFloatingToolbar` 裡按鈕的建立/掛載順序為複製、剪下、刪除、分隔線、轉換為詳細內容；新增 `toolbarDivider`（平常隱藏的 `<span class="inline-toolbar-divider">`），跟其餘按鈕一樣由 `setToolbarCopyMode` 統一控制顯示/隱藏；`style.css` 新增對應樣式（一條半透明白色細直線，撐滿工具列高度）。
+
+已用隔離測試伺服器驗證並截圖給使用者確認：按鈕/分隔線順序正確；重新測試「轉換為詳細內容」按鈕，確認調整順序後功能依然正常。純前端修正，未重新執行 Python 測試套件。
+
+### 修正既有 bug：details 容器內多個子區塊的「Aa」觸發鈕會同時全部顯示
+
+使用者測試任務 110 成果時附截圖回報：details 容器內 3 行段落，滑鼠只停在其中一行，三行的「Aa」格式選單觸發鈕卻同時全部顯示。已用真實滑鼠移動重現。
+
+**根本原因**：既有 CSS 規則 `.block-row:hover .block-format-trigger { opacity: 1; }`——details 容器（`renderCalloutBlock` 的 `.block-callout-children`）把每個子區塊自己的 `.block-row` 巢狀包在容器自己的 `.block-row` 裡面（不是平行兄弟關係）。CSS 的 `:hover` 狀態會沿 DOM 往上套用到所有祖先元素，滑鼠移到任一子區塊時，details 容器自己的外層 `.block-row` 也同時進入 `:hover`；規則的後代選擇器沒有限定「只顯示最近的那一個」，只要有任何祖先 `.block-row` 在 hover，其下所有巢狀的 `.block-format-trigger` 就全部一起顯示。這是任務 99 引入巢狀 `.block-row` 結構後就存在的既有 bug，跟這次跨區塊選取工作無關，只是這次第一次讓使用者在容易一眼看穿的情境下踩到。
+
+**修正方式**：拿掉單靠 CSS `:hover` 的做法（CSS 天生沒辦法表達「只有最内層被 hover 的那個」），改用 JS 主動追蹤滑鼠當下實際所在的區塊列——`container` 新增 `mouseover` 監聽器，用 `e.target.closest('.block-row')` 找出最內層區塊列，新增 `findOwnFormatTrigger(row)`：對每個候選觸發鈕再呼叫一次 `closest('.block-row')`，只有結果等於目前這個 `row` 本身才算數，正確排除掉屬於更深層巢狀子區塊的觸發鈕；只把 `trigger-hover-visible` class 加到這個唯一判斶出來的觸發鈕上；`mouseleave`（不冒泡）在真正離開編輯區時清空狀態。CSS 改成 `.block-format-trigger.trigger-hover-visible`（`:focus` 那條規則本來就沒有這個 bug，不會冒泡到祖先，維持不動）。
+
+已用隔離測試伺服器驗證（全程開新分頁避免快取干擾）：details 容器內連續 3 個子區塊，真實滑鼠移到任一行只有那一行的 Aa 顯示、切換行時正確跟著換、離開編輯區後正確全部隱藏，截圖確認；回歸測試確認一般頂層區塊不受影響。純前端修正，未變動 Python 解析/序列化邏輯。
+
+### 修正既有 bug：details 展開時編輯內容，`Ctrl+Z` 會把 details 一併強制收合
+
+使用者回報：在展開的 details 容器內編輯內容，按 `Ctrl+Z`，編輯內容正確復原，但 details 容器卻被主動收合。
+
+**根本原因**：`_collapsed` 是刻意設計成「檢視狀態」而非「內容」，`snapshotBlocks`（透過 `stripInternal`）產生 undo 歷史快照時本來就不包含它——這部分設計沒問題。但 `restoreSnapshot`（`Ctrl+Z`／`Ctrl+Shift+Z` 都會呼叫）是把整個 `blocks` 從快照 JSON 重新 `JSON.parse` 出一份全新物件、`assignIds` 重新指派所有 `_id`，這個「全部重建」連帶讓所有 details 區塊的 `_collapsed` 一律變成 `undefined`；而 `renderCalloutBlock` 既有「`_collapsed === undefined` 時視為『這個 session 裡還沒被使用者手動切換過』，比照 VitePress 預設收合」的防禦性判斷，因此在每次 undo/redo 後都被誤觸發，不管使用者實際上有沒有動過收合狀態，也不管這次復原的內容跟這個 details 區塊有沒有關係。
+
+**修正方式**：`restoreSnapshot` 重建前後，用新增的 `collectCollapsedStates`／`applyCollapsedStates` 依「樹狀結構位置」（每個區塊在巢狀陣列中的索引路徑，如 `"0.2.1"`）記錄、還原所有 details 區塊的 `_collapsed` 值——只要 undo/redo 沒有連帶改動 details 區塊的巢狀位置（絕大多數情境），收合/展開狀態就能正確延續；少數確實改動了樹狀位置的情境，才退回既有的預設收合行為，是可接受的降級。
+
+已用隔離測試伺服器驗證：展開容器、編輯文字、`Ctrl+Z` 正確復原文字且維持展開，截圖確認；`Ctrl+Shift+Z` 同樣正確維持；回歸測試確認手動收合/展開、以及對容器外區塊做無關 undo 都不受影響。純前端修正，未變動 Python 解析/序列化邏輯。
+
 ## Risks / Trade-offs
 
 - [Python 3.8 已停止官方安全更新] → 僅作為本機離線工具使用，不對外部網路開放服務，降低此風險的實際影響；於文件中註明此限制。
