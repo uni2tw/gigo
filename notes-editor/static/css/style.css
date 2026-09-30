@@ -358,6 +358,16 @@ html, body {
   position: relative;
 }
 
+.block-row.block-multi-selected {
+  background: rgba(78, 94, 235, 0.15);
+  border-radius: 4px;
+}
+
+.block-row.block-multi-selected * {
+  user-select: none;
+}
+
+
 .block-collapse-toggle {
   position: absolute;
   left: -22px;
@@ -1062,6 +1072,10 @@ html, body {
 }
 
 .inline-toolbar[hidden] {
+  display: none;
+}
+
+.inline-toolbar-btn[hidden] {
   display: none;
 }
 

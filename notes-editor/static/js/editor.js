@@ -8,11 +8,23 @@ window.NotesEditor = (function () {
   var openDropdown = null;
   var floatingToolbar = null;
   var inlineButtonEls = {};
+  var toolbarCopyBtn = null;
+  var toolbarCopyMode = false;
   var history = [];
   var historyIndex = -1;
   var lastSnapshotTime = 0;
   var HISTORY_LIMIT = 100;
   var COALESCE_MS = 600;
+
+  // Cross-block selection: native browser Selection cannot extend across
+  // separate contentEditable regions (each block is its own), so a
+  // block-granularity selection is tracked and highlighted by hand instead.
+  // Once a drag or Shift+Arrow crosses a block boundary, the start/end
+  // blocks become fully selected too (no partial-text precision at the
+  // edges), matching how Notion/Outline behave once you're in this mode.
+  var blockSelectionRange = null; // { startId, endId } in flattened document order
+  var dragSelectStartId = null;
+  var dragSelectMoved = false;
 
   var searchBar = null;
   var searchQueryInput = null;
@@ -59,6 +71,10 @@ window.NotesEditor = (function () {
   var ICON_BULLET_LIST = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>';
   var ICON_LINK_OPEN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>';
   var ICON_LINK_EDIT = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  // Same glyph as the toolbar's existing "複製原始碼" button, for a consistent
+  // copy icon across the app.
+  var ICON_COPY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>';
+  var ICON_CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 
   var CALLOUT_KIND_CONFIG = {
     note: {
@@ -171,6 +187,9 @@ window.NotesEditor = (function () {
       if (e.key === 'Escape' && linkCard && !linkCard.hidden) {
         hideLinkCard();
       }
+      if (e.key === 'Escape' && blockSelectionRange) {
+        clearBlockSelection(true);
+      }
       var active = document.activeElement;
       var withinSearchBar = searchBar && !searchBar.hidden && searchBar.contains(active);
       if (active && active !== document.body && !container.contains(active) && !withinSearchBar) {
@@ -274,13 +293,41 @@ window.NotesEditor = (function () {
       }
     });
 
+    container.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) {
+        return;
+      }
+      var row = e.target.closest && e.target.closest('.block-row[data-id]');
+      if (!row) {
+        return;
+      }
+      dragSelectStartId = row.dataset.id;
+      dragSelectMoved = false;
+      document.addEventListener('mousemove', handleDragSelectMove);
+      document.addEventListener('mouseup', handleDragSelectUp);
+    });
+
     container.addEventListener('mouseover', function (e) {
+      // While dragging out a block selection (or once one is active), the
+      // pointer routinely passes over links inside the dragged-over blocks;
+      // without this guard that independently triggers the link hover card,
+      // which has nothing to do with the selection gesture in progress.
+      if (dragSelectStartId || blockSelectionRange) {
+        return;
+      }
       var link = e.target.closest && e.target.closest('a');
       if (link && findBlockTextAncestor(link)) {
         scheduleShowLinkCard(link);
       }
     });
     container.addEventListener('mouseout', function (e) {
+      // Same reasoning as the mouseover guard above: a real mouse drag
+      // genuinely fires mouseout as the pointer leaves a link on its way to
+      // the next block, which would otherwise schedule showing/hiding the
+      // normal link-hover card mid-drag -- irrelevant while block-selecting.
+      if (dragSelectStartId || blockSelectionRange) {
+        return;
+      }
       var link = e.target.closest && e.target.closest('a');
       if (!link) {
         return;
@@ -1677,6 +1724,9 @@ window.NotesEditor = (function () {
   }
 
   function handleInput(block, textEl) {
+    if (blockSelectionRange) {
+      clearBlockSelection();
+    }
     var raw = textEl.textContent;
     var headingMatch = /^(#{1,6})\s+(.*)$/.exec(raw);
     if (headingMatch) {
@@ -1842,6 +1892,20 @@ window.NotesEditor = (function () {
         block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
         focusBlockSmart(nextId, false);
       }
+    } else if (e.key === 'ArrowUp' && e.shiftKey && !e.altKey) {
+      var focusUpId = blockSelectionRange ? blockSelectionRange.endId : block._id;
+      var extendUpId = adjacentVisibleBlockId(focusUpId, -1);
+      if (extendUpId) {
+        e.preventDefault();
+        setBlockSelectionRange(blockSelectionRange ? blockSelectionRange.startId : block._id, extendUpId);
+      }
+    } else if (e.key === 'ArrowDown' && e.shiftKey && !e.altKey) {
+      var focusDownId = blockSelectionRange ? blockSelectionRange.endId : block._id;
+      var extendDownId = adjacentVisibleBlockId(focusDownId, 1);
+      if (extendDownId) {
+        e.preventDefault();
+        setBlockSelectionRange(blockSelectionRange ? blockSelectionRange.startId : block._id, extendDownId);
+      }
     }
   }
 
@@ -1869,6 +1933,218 @@ window.NotesEditor = (function () {
       return null;
     }
     return seq[targetIdx]._id;
+  }
+
+  function clearBlockSelection(alsoClearNative) {
+    if (!blockSelectionRange) {
+      return;
+    }
+    blockSelectionRange = null;
+    container.querySelectorAll('.block-row.block-multi-selected').forEach(function (row) {
+      row.classList.remove('block-multi-selected');
+    });
+    hideBlockSelectionCopyBtn();
+    // Only Escape needs this: a plain click or a keystroke that triggers
+    // handleInput already gets its own caret placed by the browser's normal
+    // handling of that same gesture, so forcibly clearing the native
+    // Selection there would just destroy the caret the browser just set.
+    if (alsoClearNative) {
+      var nativeSel = window.getSelection();
+      if (nativeSel && nativeSel.rangeCount) {
+        nativeSel.removeAllRanges();
+      }
+    }
+  }
+
+  function applyBlockSelectionHighlight() {
+    container.querySelectorAll('.block-row.block-multi-selected').forEach(function (row) {
+      row.classList.remove('block-multi-selected');
+    });
+    if (!blockSelectionRange) {
+      return;
+    }
+    var seq = flattenVisibleBlocks(blocks, []);
+    var startIdx = -1;
+    var endIdx = -1;
+    for (var i = 0; i < seq.length; i++) {
+      if (seq[i]._id === blockSelectionRange.startId) {
+        startIdx = i;
+      }
+      if (seq[i]._id === blockSelectionRange.endId) {
+        endIdx = i;
+      }
+    }
+    if (startIdx === -1 || endIdx === -1) {
+      return;
+    }
+    var lo = Math.min(startIdx, endIdx);
+    var hi = Math.max(startIdx, endIdx);
+    for (var j = lo; j <= hi; j++) {
+      var row = container.querySelector('.block-row[data-id="' + seq[j]._id + '"]');
+      if (row) {
+        row.classList.add('block-multi-selected');
+      }
+    }
+  }
+
+  function setBlockSelectionRange(startId, endId) {
+    if (startId === endId) {
+      clearBlockSelection();
+      return;
+    }
+    cancelShowLinkCard();
+    hideLinkCard();
+    blockSelectionRange = { startId: startId, endId: endId };
+    applyBlockSelectionHighlight();
+    // Deliberately not constructing a real native Selection/Range spanning
+    // the two blocks here: an earlier attempt at that (to make native
+    // right-click "Copy" work) instead left a native partial-text highlight
+    // visibly showing through/alongside the .block-multi-selected highlight
+    // in a real browser, and never reliably enabled right-click Copy anyway
+    // (see the block-selection copy button below, which is the reliable
+    // path). Clearing it keeps the only visible selection UI as our own
+    // block-level highlight.
+    window.getSelection().removeAllRanges();
+    showBlockSelectionCopyBtn(startId, endId);
+  }
+
+  // Native right-click "Copy" depends on the browser's own judgement of
+  // whether the current Selection is copyable, and real-world testing shows
+  // that judgement does not reliably cover a Selection whose two ends sit in
+  // separate contentEditable elements (each block is its own), even though
+  // window.Selection itself reports it as a valid, non-collapsed range. So a
+  // block selection also gets its own explicit, always-reliable copy button
+  // that bypasses the native context menu entirely via the Clipboard API.
+  function getBlockSelectionMarkdown() {
+    if (!blockSelectionRange) {
+      return '';
+    }
+    var seq = flattenVisibleBlocks(blocks, []);
+    var startIdx = seq.findIndex(function (b) { return b._id === blockSelectionRange.startId; });
+    var endIdx = seq.findIndex(function (b) { return b._id === blockSelectionRange.endId; });
+    if (startIdx === -1 || endIdx === -1) {
+      return '';
+    }
+    var lo = Math.min(startIdx, endIdx);
+    var hi = Math.max(startIdx, endIdx);
+    return window.NotesMarkdown.blocksToMarkdown(seq.slice(lo, hi + 1)).replace(/\n+$/, '');
+  }
+
+  // Measures a bounding rect spanning the whole block selection (start
+  // block's beginning to end block's end) purely for positioning the
+  // floating toolbar -- this Range is never applied to window.getSelection(),
+  // so it can't reintroduce the native cross-block highlight that an earlier
+  // fix deliberately removed (see setBlockSelectionRange).
+  function getBlockSelectionBoundingRect(startId, endId) {
+    // startId/endId are the drag's anchor/focus ends, not necessarily in
+    // document order (a reverse, bottom-to-top drag has startId visually
+    // below endId). A Range requires its start boundary to come at or before
+    // its end boundary in document order -- setEnd() with a point before the
+    // already-set start silently collapses the range to that point instead
+    // of throwing, so an un-normalized call here quietly produced a
+    // degenerate, wrongly-positioned rect on any reverse drag.
+    var seq = flattenVisibleBlocks(blocks, []);
+    var startIdx = seq.findIndex(function (b) { return b._id === startId; });
+    var endIdx = seq.findIndex(function (b) { return b._id === endId; });
+    if (startIdx === -1 || endIdx === -1) {
+      return null;
+    }
+    var firstId = startIdx <= endIdx ? startId : endId;
+    var lastId = startIdx <= endIdx ? endId : startId;
+    var firstRow = container.querySelector('.block-row[data-id="' + firstId + '"]');
+    var lastRow = container.querySelector('.block-row[data-id="' + lastId + '"]');
+    if (!firstRow || !lastRow) {
+      return null;
+    }
+    var range = document.createRange();
+    var startAnchor = firstRow.querySelector('.block-text') || firstRow;
+    var endAnchor = lastRow.querySelector('.block-text') || lastRow;
+    range.setStart(startAnchor, 0);
+    range.setEnd(endAnchor, endAnchor.childNodes.length);
+    var rect = range.getBoundingClientRect();
+    if (rect.width || rect.height) {
+      return rect;
+    }
+    return firstRow.getBoundingClientRect();
+  }
+
+  // A cross-block selection has no bold/italic-style formatting to offer,
+  // only copy -- rather than popping up a second, visually distinct floating
+  // element for that, this reuses the very same floating format toolbar
+  // shell: the format buttons hide and a lone copy button takes their place,
+  // positioned the same way the toolbar normally positions itself (centered
+  // above the selection).
+  function setToolbarCopyMode(on) {
+    toolbarCopyMode = on;
+    INLINE_BUTTONS.forEach(function (b) {
+      var el = inlineButtonEls[b.cmd];
+      if (el) {
+        el.hidden = on;
+      }
+    });
+    if (toolbarCopyBtn) {
+      toolbarCopyBtn.hidden = !on;
+    }
+  }
+
+  function showBlockSelectionCopyBtn(startId, endId) {
+    var toolbar = ensureFloatingToolbar();
+    setToolbarCopyMode(true);
+    var rect = getBlockSelectionBoundingRect(startId, endId);
+    if (!rect) {
+      return;
+    }
+    toolbar.hidden = false;
+    var top = rect.top - toolbar.offsetHeight - 8;
+    if (top < 8) {
+      top = rect.bottom + 8;
+    }
+    // Left-aligned to the selection's left edge, unlike the centered
+    // positioning a normal single-block text selection uses -- a multi-block
+    // selection's bounding box spans the full column width, so centering it
+    // put the toolbar in the middle of the column rather than near where the
+    // selection visually starts.
+    toolbar.style.top = Math.max(8, top) + 'px';
+    toolbar.style.left = Math.max(8, rect.left) + 'px';
+  }
+
+  function hideBlockSelectionCopyBtn() {
+    if (!toolbarCopyMode) {
+      return;
+    }
+    setToolbarCopyMode(false);
+    hideFloatingToolbar();
+  }
+
+  function handleDragSelectMove(e) {
+    if (!dragSelectStartId) {
+      return;
+    }
+    var target = document.elementFromPoint(e.clientX, e.clientY);
+    var row = target && target.closest && target.closest('.block-row[data-id]');
+    if (!row) {
+      return;
+    }
+    var currentId = row.dataset.id;
+    if (currentId === dragSelectStartId) {
+      if (blockSelectionRange) {
+        clearBlockSelection();
+      }
+      return;
+    }
+    dragSelectMoved = true;
+    e.preventDefault();
+    setBlockSelectionRange(dragSelectStartId, currentId);
+  }
+
+  function handleDragSelectUp() {
+    document.removeEventListener('mousemove', handleDragSelectMove);
+    document.removeEventListener('mouseup', handleDragSelectUp);
+    if (!dragSelectMoved) {
+      clearBlockSelection();
+    }
+    dragSelectStartId = null;
+    dragSelectMoved = false;
   }
 
   function splitAtCaret(textEl) {
@@ -2140,6 +2416,14 @@ window.NotesEditor = (function () {
   // For a selection that spans more than one block, build a clean plain-text
   // clipboard payload ourselves instead of letting the browser serialize it.
   function handleCopy(e) {
+    if (blockSelectionRange) {
+      var blockSelText = getBlockSelectionMarkdown();
+      if (blockSelText) {
+        e.clipboardData.setData('text/plain', blockSelText);
+        e.preventDefault();
+      }
+      return;
+    }
     var sel = window.getSelection();
     if (!sel.rangeCount || sel.isCollapsed) {
       return;
@@ -2317,6 +2601,25 @@ window.NotesEditor = (function () {
       floatingToolbar.appendChild(btn);
     });
 
+    // Shown instead of the format buttons above when a cross-block
+    // selection is active (see setToolbarCopyMode) -- bold/italic/etc. don't
+    // apply to a multi-block selection, only copy does, so this reuses the
+    // same toolbar shell rather than popping up a visually different one.
+    toolbarCopyBtn = document.createElement('button');
+    toolbarCopyBtn.type = 'button';
+    toolbarCopyBtn.className = 'inline-toolbar-btn';
+    toolbarCopyBtn.title = '複製';
+    toolbarCopyBtn.innerHTML = ICON_COPY;
+    toolbarCopyBtn.hidden = true;
+    toolbarCopyBtn.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+    });
+    toolbarCopyBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      copyBlockSelectionViaToolbar();
+    });
+    floatingToolbar.appendChild(toolbarCopyBtn);
+
     document.body.appendChild(floatingToolbar);
     return floatingToolbar;
   }
@@ -2420,6 +2723,16 @@ window.NotesEditor = (function () {
   }
 
   function handleSelectionChange() {
+    if (blockSelectionRange) {
+      // The block-selection copy button lives in this same floating toolbar
+      // (see showBlockSelectionCopyBtn) and is managed entirely by
+      // setBlockSelectionRange/clearBlockSelection -- selectionchange fires
+      // constantly while a block selection is active, so it must not blindly
+      // hide the toolbar here, only ever cancel a pending normal link-hover
+      // show.
+      cancelShowLinkCard();
+      return;
+    }
     var sel = window.getSelection();
     if (!sel.rangeCount) {
       hideFloatingToolbar();
@@ -2564,6 +2877,46 @@ window.NotesEditor = (function () {
 
     document.body.appendChild(linkCard);
     return linkCard;
+  }
+
+  function copyBlockSelectionViaToolbar() {
+    var text = getBlockSelectionMarkdown();
+    if (!text) {
+      return;
+    }
+    var showCopiedFeedback = function () {
+      toolbarCopyBtn.innerHTML = ICON_CHECK;
+      toolbarCopyBtn.title = '已複製';
+      setTimeout(function () {
+        toolbarCopyBtn.innerHTML = ICON_COPY;
+        toolbarCopyBtn.title = '複製';
+      }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showCopiedFeedback, function () {
+        fallbackCopyText(text);
+        showCopiedFeedback();
+      });
+    } else {
+      fallbackCopyText(text);
+      showCopiedFeedback();
+    }
+  }
+
+  function fallbackCopyText(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      // Nothing more we can do; the custom highlight and Ctrl+C path still work.
+    }
+    document.body.removeChild(ta);
   }
 
   function setLinkOpenModifierActive(active) {
