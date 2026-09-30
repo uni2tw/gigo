@@ -29,6 +29,7 @@ window.NotesEditor = (function () {
   // edges), matching how Notion/Outline behave once you're in this mode.
   var blockSelectionRange = null; // { startId, endId } in flattened document order
   var dragSelectStartId = null;
+  var dragSelectStartCell = null;
   var dragSelectMoved = false;
 
   var searchBar = null;
@@ -318,6 +319,7 @@ window.NotesEditor = (function () {
         return;
       }
       dragSelectStartId = row.dataset.id;
+      dragSelectStartCell = e.target.closest && e.target.closest('td, th');
       dragSelectMoved = false;
       document.addEventListener('mousemove', handleDragSelectMove);
       document.addEventListener('mouseup', handleDragSelectUp);
@@ -2084,8 +2086,18 @@ window.NotesEditor = (function () {
 
   function setBlockSelectionRange(startId, endId) {
     if (startId === endId) {
-      clearBlockSelection();
-      return;
+      // A same-id call almost always means "just a click, not a real drag"
+      // and should be a no-op (see handleDragSelectMove) -- except a table,
+      // which is deliberately allowed to select itself alone (see the
+      // dragSelectStartCell handling there), since there's no meaningful
+      // "partial table" selection to fall back to and requiring a drag out
+      // to some other block just to select "the whole table" isn't how
+      // anyone actually reaches for it.
+      var soloBlock = findBlock(blocks, startId);
+      if (!soloBlock || soloBlock.type !== 'table') {
+        clearBlockSelection();
+        return;
+      }
     }
     cancelShowLinkCard();
     hideLinkCard();
@@ -2348,6 +2360,22 @@ window.NotesEditor = (function () {
     }
     var currentId = row.dataset.id;
     if (currentId === dragSelectStartId) {
+      // A table is one single block (no per-cell granularity in this
+      // feature), so dragging start-to-end without ever leaving it doesn't
+      // read as "crossing into another block" the way the rest of this
+      // selection model expects -- normally that means "just a click,
+      // ignore it". But for a table specifically, that's the most natural
+      // gesture for "select this whole table" (drag across its own cells),
+      // so a drag that moves to a genuinely different cell within the same
+      // table is treated as selecting that table on its own.
+      var target2 = target.closest && target.closest('td, th');
+      var startBlock = findBlock(blocks, dragSelectStartId);
+      if (startBlock && startBlock.type === 'table' && dragSelectStartCell && target2 && target2 !== dragSelectStartCell) {
+        dragSelectMoved = true;
+        e.preventDefault();
+        setBlockSelectionRange(dragSelectStartId, dragSelectStartId);
+        return;
+      }
       if (blockSelectionRange) {
         clearBlockSelection();
       }
@@ -2361,6 +2389,7 @@ window.NotesEditor = (function () {
   function handleDragSelectUp() {
     document.removeEventListener('mousemove', handleDragSelectMove);
     document.removeEventListener('mouseup', handleDragSelectUp);
+    dragSelectStartCell = null;
     if (!dragSelectMoved) {
       clearBlockSelection();
     }
