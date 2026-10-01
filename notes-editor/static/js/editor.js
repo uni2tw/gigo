@@ -50,8 +50,8 @@ window.NotesEditor = (function () {
   var linkCardHideTimer = null;
   var linkCardShowTimer = null;
   var linkCardPendingLinkEl = null;
-  var LINK_CARD_HOVER_DELAY_MS = 500;
-  var LINK_CARD_HIDE_DELAY_MS = 500;
+  var LINK_CARD_HOVER_DELAY_MS = 300;
+  var LINK_CARD_HIDE_DELAY_MS = 300;
   var linkOpenModifierActive = false;
 
   var lastFocusedBlockId = null;
@@ -3376,6 +3376,16 @@ window.NotesEditor = (function () {
       return;
     }
     cancelShowLinkCard();
+    // The hover delay is only there to avoid flicker when the pointer is
+    // just passing by on its way elsewhere, before anything is showing yet.
+    // Once the card is already visible (for some other link), moving
+    // straight onto a new one should switch instantly -- the user has
+    // already committed to looking at this card, there's nothing left to
+    // debounce against.
+    if (linkCard && !linkCard.hidden) {
+      showLinkCardForLink(linkEl);
+      return;
+    }
     linkCardPendingLinkEl = linkEl;
     linkCardShowTimer = setTimeout(function () {
       linkCardShowTimer = null;
