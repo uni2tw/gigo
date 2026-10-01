@@ -45,10 +45,21 @@ window.NotesModal = (function () {
         finish(v || null);
       });
       input.addEventListener('keydown', function (e) {
+        // Without these, the keydown keeps bubbling past this modal (it's
+        // appended straight to document.body, not inside the editor's own
+        // container) up to the document-level shortcut listeners the editor
+        // registers for its own keyboard shortcuts -- a plain Enter isn't
+        // normally one of those, but there's no reason a modal dialog's own
+        // input should ever let its keystrokes leak out to the page behind
+        // it, confirm vs. cancel included.
         if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
           var v = input.value.trim();
           finish(v || null);
         } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
           finish(null);
         }
       });

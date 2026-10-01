@@ -3048,6 +3048,14 @@ window.NotesEditor = (function () {
         if (!url) {
           return;
         }
+        // The modal's own input had focus while it was open; once it closes
+        // and is removed from the DOM, focus falls back to document.body.
+        // execCommand('createLink') needs the restored range to actually be
+        // inside a focused editable region to reliably wrap the selected
+        // text -- re-focusing textEl first (its content is unchanged, so
+        // this doesn't move the caret anywhere unexpected) before restoring
+        // the range avoids relying on exactly where focus happened to land.
+        textEl.focus();
         var s = window.getSelection();
         s.removeAllRanges();
         s.addRange(savedRange);
