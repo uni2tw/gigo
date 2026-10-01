@@ -3038,7 +3038,13 @@ window.NotesEditor = (function () {
         return;
       }
       var savedRange = range.cloneRange();
-      window.NotesModal.prompt('輸入連結網址', 'https://').then(function (url) {
+      // If the selected text already looks like a URL (same check used for
+      // auto-linkifying a bare URL on Enter), prefill with it instead of the
+      // generic "https://" -- re-typing/re-pasting a URL that's already
+      // selected and already valid would be pure busywork.
+      var selectedText = range.toString().trim();
+      var promptDefault = AUTO_LINK_URL_RE.test(selectedText) ? selectedText : 'https://';
+      window.NotesModal.prompt('輸入連結網址', promptDefault).then(function (url) {
         if (!url) {
           return;
         }
