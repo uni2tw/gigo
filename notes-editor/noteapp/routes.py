@@ -71,7 +71,9 @@ def update_node_route(node_path):
 
 @api_bp.route('/nodes/<path:node_path>', methods=['DELETE'])
 def delete_node_route(node_path):
-    tree.delete_node(_notes_root(), node_path)
+    data = request.get_json(force=True, silent=True) or {}
+    images = data.get('images')
+    tree.delete_node(_notes_root(), node_path, images=images)
     return '', 204
 
 

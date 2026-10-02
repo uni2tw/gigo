@@ -37,8 +37,13 @@ window.NotesApi = (function () {
     });
   }
 
-  function deleteNode(path) {
-    return request('/api/nodes/' + encodeURI(path), { method: 'DELETE' });
+  function deleteNode(path, images) {
+    var options = { method: 'DELETE' };
+    if (images && images.length) {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify({ images: images });
+    }
+    return request('/api/nodes/' + encodeURI(path), options);
   }
 
   function getNote(path) {

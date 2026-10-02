@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from .pathsafety import resolve_safe_path
+from .pathsafety import PathSecurityError, resolve_safe_path
 
 NOTE_EXT = '.md'
 
@@ -77,15 +77,40 @@ def create_node(root, parent_path, name, node_type):
     return _rel(root, target_abs)
 
 
-def delete_node(root, rel_path):
-    """Delete a note file, or recursively delete a folder and its contents."""
+def delete_node(root, rel_path, images=None):
+    """Delete a note file, or recursively delete a folder and its contents.
+
+    `images` is an optional list of bare filenames (no directory components)
+    to also remove from the note's own directory -- images are stored
+    alongside their note, not in a separate assets folder, so deleting a
+    note never implies deleting them; the caller passes exactly which ones
+    the user chose to also remove.
+    """
     target_abs = resolve_safe_path(root, rel_path)
     if os.path.isdir(target_abs):
         shutil.rmtree(target_abs)
-    elif os.path.isfile(target_abs):
-        os.remove(target_abs)
-    else:
+        return
+    if not os.path.isfile(target_abs):
         raise NodeNotFoundError('Node not found: %r' % (rel_path,))
+
+    os.remove(target_abs)
+
+    if not images:
+        return
+    note_dir = os.path.dirname(rel_path)
+    for filename in images:
+        # Only a bare filename is ever valid here (that's all an image src
+        # is ever written as) -- anything else is silently skipped rather
+        # than trusted, since this list ultimately comes from a request body.
+        if not filename or os.path.basename(filename) != filename:
+            continue
+        image_rel = (note_dir + '/' + filename) if note_dir else filename
+        try:
+            image_abs = resolve_safe_path(root, image_rel)
+        except PathSecurityError:
+            continue
+        if os.path.isfile(image_abs):
+            os.remove(image_abs)
 
 
 def move_or_rename_node(root, rel_path, new_rel_path):

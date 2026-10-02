@@ -332,18 +332,65 @@ window.NotesTree = (function () {
     });
   }
 
+  function collectImageSrcs(blocks, out) {
+    (blocks || []).forEach(function (b) {
+      if (b.type === 'image' && b.src) {
+        out.push(b.src);
+      }
+      if (b.children && b.children.length) {
+        collectImageSrcs(b.children, out);
+      }
+    });
+    return out;
+  }
+
+  function deleteNodeAndClose(node, images) {
+    window.NotesApi.deleteNode(node.path, images)
+      .then(function () {
+        window.NotesApp.onNodeDeleted(node.path);
+      })
+      .catch(function (err) {
+        window.alert(err.message);
+      });
+  }
+
   function handleDelete(node) {
-    window.NotesModal.confirm('確定要刪除「' + node.name + '」嗎？此操作無法復原。').then(function (ok) {
-      if (!ok) {
+    if (node.type !== 'note') {
+      window.NotesModal.confirm('確定要刪除「' + node.name + '」嗎？此操作無法復原。').then(function (ok) {
+        if (!ok) {
+          return;
+        }
+        deleteNodeAndClose(node, null);
+      });
+      return;
+    }
+
+    window.NotesApi.getNote(node.path).then(function (data) {
+      var srcs = collectImageSrcs(data.blocks, []);
+      if (!srcs.length) {
+        window.NotesModal.confirm('確定要刪除「' + node.name + '」嗎？此操作無法復原。').then(function (ok) {
+          if (!ok) {
+            return;
+          }
+          deleteNodeAndClose(node, null);
+        });
         return;
       }
-      window.NotesApi.deleteNode(node.path)
-        .then(function () {
-          window.NotesApp.onNodeDeleted(node.path);
-        })
-        .catch(function (err) {
-          window.alert(err.message);
-        });
+
+      var parentDir = parentDirOf(node.path);
+      var images = srcs.map(function (src) {
+        var rel = (parentDir ? parentDir + '/' : '') + src;
+        return { filename: src, url: window.NotesApi.fileUrl(rel) };
+      });
+      var message = '確定要刪除「' + node.name + '」嗎？此操作無法復原。這篇筆記包含 ' + images.length + ' 張圖片：';
+      window.NotesModal.confirmDeleteWithImages(message, images).then(function (keptImages) {
+        if (keptImages === null) {
+          return;
+        }
+        deleteNodeAndClose(node, keptImages);
+      });
+    }).catch(function (err) {
+      window.alert(err.message);
     });
   }
 

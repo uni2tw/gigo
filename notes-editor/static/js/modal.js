@@ -100,6 +100,54 @@ window.NotesModal = (function () {
     });
   }
 
+  function confirmDeleteWithImages(message, images) {
+    return new Promise(function (resolve) {
+      var root = ensureRoot();
+      root.classList.add('modal-open');
+
+      var itemsHtml = images.map(function (img, i) {
+        return (
+          '<label class="modal-image-item">' +
+          '<input type="checkbox" class="modal-image-checkbox" data-index="' + i + '" checked />' +
+          '<img class="modal-image-thumb" src="' + img.url + '" alt="" />' +
+          '<span class="modal-image-caption">' + img.filename + '</span>' +
+          '</label>'
+        );
+      }).join('');
+
+      root.innerHTML =
+        '<div class="modal-backdrop">' +
+        '<div class="modal-box modal-box-wide">' +
+        '<div class="modal-message"></div>' +
+        '<div class="modal-image-grid">' + itemsHtml + '</div>' +
+        '<div class="modal-actions">' +
+        '<button class="modal-btn modal-btn-cancel">取消</button>' +
+        '<button class="modal-btn modal-btn-danger">刪除</button>' +
+        '</div></div></div>';
+
+      root.querySelector('.modal-message').textContent = message;
+
+      function finish(value) {
+        close(root);
+        resolve(value);
+      }
+
+      root.querySelector('.modal-btn-cancel').addEventListener('click', function () {
+        finish(null);
+      });
+      root.querySelector('.modal-btn-danger').addEventListener('click', function () {
+        var checkboxes = root.querySelectorAll('.modal-image-checkbox');
+        var kept = [];
+        for (var i = 0; i < checkboxes.length; i++) {
+          if (checkboxes[i].checked) {
+            kept.push(images[Number(checkboxes[i].getAttribute('data-index'))].filename);
+          }
+        }
+        finish(kept);
+      });
+    });
+  }
+
   function notify(message, actionLabel) {
     return new Promise(function (resolve) {
       var root = ensureRoot();
@@ -125,6 +173,7 @@ window.NotesModal = (function () {
   return {
     prompt: prompt,
     confirm: confirmDialog,
+    confirmDeleteWithImages: confirmDeleteWithImages,
     notify: notify,
   };
 })();

@@ -1082,6 +1082,47 @@ html, body {
   color: #fff;
 }
 
+.modal-box-wide {
+  width: min(92vw, 640px);
+}
+
+.modal-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+  padding: 4px;
+}
+
+.modal-image-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.modal-image-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--sidebar-border);
+}
+
+.modal-image-checkbox {
+  align-self: flex-start;
+}
+
+.modal-image-caption {
+  font-size: 11px;
+  color: var(--text-color);
+  word-break: break-all;
+  text-align: center;
+}
+
 
 .inline-toolbar {
   position: fixed;
