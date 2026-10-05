@@ -9,6 +9,7 @@ _ORDERED_RE = re.compile(r'^( *)(\d+)\.\s+(.*)$')
 _LIST_RE = re.compile(r'^( *)([-*])\s+(.*)$')
 _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
+_BR_RE = re.compile(r'<br\s*/?>', re.IGNORECASE)
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
 _HR_RE = re.compile(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$')
 _FENCE_RE = re.compile(r'^```(\w*)\s*$')
@@ -31,7 +32,7 @@ def _split_table_row(line):
         stripped = stripped[1:]
     if stripped.endswith('|'):
         stripped = stripped[:-1]
-    return [cell.strip() for cell in stripped.split('|')]
+    return [_BR_RE.sub('\n', cell.strip()) for cell in stripped.split('|')]
 
 
 def _join_wrapped_table_row(lines, start):
@@ -293,7 +294,7 @@ def parse_markdown_to_blocks(text):
 
 
 def _format_table_row(cells):
-    return '| ' + ' | '.join(cells) + ' |'
+    return '| ' + ' | '.join(c.replace('\r\n', '\n').replace('\n', '<br>') for c in cells) + ' |'
 
 
 def _format_table_separator(align, col_count):

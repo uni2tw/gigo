@@ -151,6 +151,12 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertEqual(len(blocks), 1)
         self.assertEqual(blocks[0].rows, [['a', 'b', 'c'], ['1', '2 3', 'x'], ['4', '5', '6']])
 
+    def test_table_cell_line_break_round_trips_as_br(self):
+        md = '| a | b |\n| --- | --- |\n| x<br>y | z |'
+        blocks = parse_markdown_to_blocks(md)
+        self.assertEqual(blocks[0].rows[1], ['x\ny', 'z'])
+        self.assertEqual(blocks_to_markdown(blocks).strip(), md)
+
     def test_table_row_without_separator_is_plain_paragraphs(self):
         text = '| not a table | just text |\n'
         blocks = parse_markdown_to_blocks(text)

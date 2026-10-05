@@ -47,7 +47,7 @@ window.NotesMarkdown = (function () {
       stripped = stripped.slice(0, -1);
     }
     return stripped.split('|').map(function (cell) {
-      return cell.trim();
+      return cell.trim().replace(/<br\s*\/?>/gi, '\n');
     });
   }
 
@@ -335,7 +335,9 @@ window.NotesMarkdown = (function () {
   }
 
   function formatTableRow(cells) {
-    return '| ' + cells.join(' | ') + ' |';
+    return '| ' + cells.map(function (c) {
+      return c.replace(/\r?\n/g, '<br>');
+    }).join(' | ') + ' |';
   }
 
   function formatTableSeparator(align, colCount) {
