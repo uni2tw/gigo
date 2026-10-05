@@ -1114,9 +1114,52 @@ window.NotesEditor = (function () {
     });
     wrap.appendChild(delBtn);
 
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'block-image-copy';
+    copyBtn.title = '複製圖片';
+    copyBtn.innerHTML = ICON_COPY;
+    copyBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      copyImageToClipboard(img, copyBtn);
+    });
+    wrap.appendChild(copyBtn);
+
     row.appendChild(wrap);
     group.appendChild(row);
     return group;
+  }
+
+  // The async Clipboard API only reliably accepts image/png, so every format
+  // (jpg/gif/webp) is redrawn onto a canvas and re-encoded as PNG; an animated
+  // gif therefore copies as its first frame.
+  function copyImageToClipboard(img, btn) {
+    function fail() {
+      window.NotesModal.notify('無法複製圖片，請確認瀏覽器允許剪貼簿存取。', '確定');
+    }
+    if (!img.naturalWidth || !navigator.clipboard || !window.ClipboardItem) {
+      fail();
+      return;
+    }
+    var canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    canvas.toBlob(function (blob) {
+      if (!blob) {
+        fail();
+        return;
+      }
+      navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(function () {
+        var original = btn.innerHTML;
+        btn.innerHTML = '✓';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.innerHTML = original;
+          btn.classList.remove('copied');
+        }, 1200);
+      }, fail);
+    }, 'image/png');
   }
 
   function renderHrBlock(block) {
