@@ -2150,7 +2150,15 @@ window.NotesEditor = (function () {
     }
     var lo = Math.min(startIdx, endIdx);
     var hi = Math.max(startIdx, endIdx);
-    return window.NotesMarkdown.blocksToMarkdown(seq.slice(lo, hi + 1)).replace(/\n+$/, '');
+    return collapseSelfLinks(window.NotesMarkdown.blocksToMarkdown(seq.slice(lo, hi + 1)).replace(/\n+$/, ''));
+  }
+
+  // A link whose label equals its URL would paste as the URL twice
+  // (`[url](url)`) into plain-text targets like Notepad; copy just the URL.
+  function collapseSelfLinks(text) {
+    return text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (m, label, href) {
+      return label === href ? href : m;
+    });
   }
 
   // Measures a bounding rect spanning the whole block selection (start
@@ -2763,7 +2771,7 @@ window.NotesEditor = (function () {
     }
     lines.push(window.NotesMarkdown.htmlToInlineMarkdown(lastDiv));
 
-    e.clipboardData.setData('text/plain', lines.join('\n'));
+    e.clipboardData.setData('text/plain', collapseSelfLinks(lines.join('\n')));
     e.preventDefault();
   }
 
