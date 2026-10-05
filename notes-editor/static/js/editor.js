@@ -458,23 +458,91 @@ window.NotesEditor = (function () {
     return JSON.stringify(stripInternal(stripAutoTrailingParagraph(blocks)));
   }
 
+  // Caret as (block tree path, offset into the block's visible text), so it
+  // can be re-resolved after restoreSnapshot rebuilds every block from JSON.
+  // Only plain text blocks are tracked; tables/code blocks/images fall back to
+  // the old "just remember the focused block" behavior.
+  function captureCaret() {
+    var sel = window.getSelection();
+    if (!container || !sel.rangeCount || !sel.isCollapsed) {
+      return null;
+    }
+    var range = sel.getRangeAt(0);
+    var textEl = findBlockTextAncestor(range.startContainer);
+    if (!textEl || !container.contains(textEl)) {
+      return null;
+    }
+    var row = textEl.closest('[data-id]');
+    var path = row ? findBlockIndexPath(blocks, row.dataset.id) : null;
+    if (!path) {
+      return null;
+    }
+    var probe = document.createRange();
+    probe.selectNodeContents(textEl);
+    probe.setEnd(range.startContainer, range.startOffset);
+    return { path: path, offset: probe.toString().length };
+  }
+
+  function placeCaretAt(caret) {
+    var target = getBlockAtIndexPath(blocks, caret.path);
+    if (!target || !target._id) {
+      return false;
+    }
+    lastFocusedBlockId = target._id;
+    setTimeout(function () {
+      var textEl = container.querySelector('[data-id="' + target._id + '"] .block-text');
+      if (!textEl) {
+        focusBlockSmart(target._id, false);
+        return;
+      }
+      textEl.focus();
+      var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null);
+      var remaining = caret.offset;
+      var node = walker.nextNode();
+      var lastNode = null;
+      while (node) {
+        lastNode = node;
+        if (remaining <= node.nodeValue.length) {
+          break;
+        }
+        remaining -= node.nodeValue.length;
+        node = walker.nextNode();
+      }
+      var range = document.createRange();
+      if (node) {
+        range.setStart(node, remaining);
+      } else if (lastNode) {
+        range.setStart(lastNode, lastNode.nodeValue.length);
+      } else {
+        range.selectNodeContents(textEl);
+        range.collapse(true);
+      }
+      range.collapse(true);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, 0);
+    return true;
+  }
+
   function resetHistory() {
-    history = [snapshotBlocks()];
+    history = [{ snap: snapshotBlocks(), caret: null }];
     historyIndex = 0;
     lastSnapshotTime = Date.now();
   }
 
   function pushHistory(forceNewEntry) {
     var snap = snapshotBlocks();
-    if (historyIndex >= 0 && history[historyIndex] === snap) {
+    if (historyIndex >= 0 && history[historyIndex].snap === snap) {
       return;
     }
+    var caret = captureCaret();
     var now = Date.now();
     if (!forceNewEntry && historyIndex >= 0 && (now - lastSnapshotTime) < COALESCE_MS) {
-      history[historyIndex] = snap;
+      history[historyIndex] = { snap: snap, caret: caret };
     } else {
       history = history.slice(0, historyIndex + 1);
-      history.push(snap);
+      history.push({ snap: snap, caret: caret });
       historyIndex = history.length - 1;
       if (history.length > HISTORY_LIMIT) {
         history.shift();
@@ -522,7 +590,87 @@ window.NotesEditor = (function () {
     });
   }
 
-  function restoreSnapshot(snapJson) {
+  function flattenWithPaths(list, path, out) {
+    list.forEach(function (b, i) {
+      var p = path.concat(i);
+      out.push({ path: p, node: b });
+      flattenWithPaths(b.children || [], p, out);
+    });
+    return out;
+  }
+
+  function nodeFingerprint(b) {
+    var copy = {};
+    Object.keys(b).forEach(function (k) {
+      if (k !== 'children') {
+        copy[k] = b[k];
+      }
+    });
+    return JSON.stringify(copy);
+  }
+
+  function visibleTextLength(md) {
+    var div = document.createElement('div');
+    div.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(md);
+    return div.textContent.length;
+  }
+
+  // Where the caret should land after swapping oldSnap for newSnap: the first
+  // block that differs, and within its text the end of the changed region
+  // (i.e. just after re-inserted text on redo, at the removal point on undo).
+  // Computed from the two snapshots rather than recorded at edit time, so it
+  // works for every history entry, including ones that never had a caret.
+  function diffCaret(oldSnap, newSnap) {
+    var oldFlat = flattenWithPaths(JSON.parse(oldSnap), [], []);
+    var newFlat = flattenWithPaths(JSON.parse(newSnap), [], []);
+    if (!newFlat.length) {
+      return null;
+    }
+    var i = 0;
+    while (i < newFlat.length && i < oldFlat.length &&
+           nodeFingerprint(oldFlat[i].node) === nodeFingerprint(newFlat[i].node)) {
+      i += 1;
+    }
+    // Undoing the insertion of a whole block (e.g. Enter at the end of a
+    // line): old tree has one extra block at i, the rest lines up. Land at
+    // the end of the block before it, where the user was typing.
+    if (oldFlat.length === newFlat.length + 1 && i < newFlat.length &&
+        nodeFingerprint(oldFlat[i + 1].node) === nodeFingerprint(newFlat[i].node)) {
+      if (i === 0) {
+        return { path: newFlat[0].path, offset: 0 };
+      }
+      var prev = newFlat[i - 1];
+      return { path: prev.path, offset: visibleTextLength(prev.node.text || '') };
+    }
+    var entry = newFlat[Math.min(i, newFlat.length - 1)];
+    var after = entry.node.text || '';
+    var offset = after.length;
+    if (i < oldFlat.length && i < newFlat.length && oldFlat[i].node.type === entry.node.type) {
+      var before = oldFlat[i].node.text || '';
+      var limit = Math.min(before.length, after.length);
+      var prefix = 0;
+      while (prefix < limit && before.charAt(prefix) === after.charAt(prefix)) {
+        prefix += 1;
+      }
+      var suffix = 0;
+      while (suffix < limit - prefix &&
+             before.charAt(before.length - 1 - suffix) === after.charAt(after.length - 1 - suffix)) {
+        suffix += 1;
+      }
+      offset = after.length - suffix;
+      // Undoing a split (Enter): the old tree has the two halves as adjacent
+      // blocks, the new one has them joined -- land on the join point.
+      var nextOld = oldFlat[i + 1];
+      if (nextOld && after.indexOf(before) === 0 && after.slice(before.length) === (nextOld.node.text || '')) {
+        offset = before.length;
+      }
+    }
+    return { path: entry.path, offset: visibleTextLength(after.slice(0, offset)) };
+  }
+
+  function restoreSnapshot(entry) {
+    var snapJson = entry.snap;
+    var oldSnap = snapshotBlocks();
     var focusPath = lastFocusedBlockId ? findBlockIndexPath(blocks, lastFocusedBlockId) : null;
     var collapsedStates = {};
     collectCollapsedStates(blocks, [], collapsedStates);
@@ -532,6 +680,10 @@ window.NotesEditor = (function () {
     applyCollapsedStates(blocks, [], collapsedStates);
     render();
     onChange();
+    var caret = diffCaret(oldSnap, snapJson) || entry.caret;
+    if (caret && placeCaretAt(caret)) {
+      return;
+    }
     if (focusPath) {
       var target = getBlockAtIndexPath(blocks, focusPath);
       if (target) {
