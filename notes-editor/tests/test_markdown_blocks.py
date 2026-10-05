@@ -145,6 +145,12 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[0].type, 'table')
         self.assertEqual(blocks[1].type, 'paragraph')
 
+    def test_table_row_wrapped_onto_next_line_is_joined(self):
+        md = '| a | b | c |\n| --- | --- | --- |\n| 1 | 2\n3 | x |\n| 4 | 5 | 6 |'
+        blocks = parse_markdown_to_blocks(md)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].rows, [['a', 'b', 'c'], ['1', '2 3', 'x'], ['4', '5', '6']])
+
     def test_table_row_without_separator_is_plain_paragraphs(self):
         text = '| not a table | just text |\n'
         blocks = parse_markdown_to_blocks(text)

@@ -34,6 +34,25 @@ def _split_table_row(line):
     return [cell.strip() for cell in stripped.split('|')]
 
 
+def _join_wrapped_table_row(lines, start):
+    """A body row that starts with `|` but doesn't end with one was wrapped
+    onto following lines (e.g. pasted text with a stray line break inside a
+    cell); join those lines with a space until the closing `|`. Returns
+    (row_line, lines_consumed); falls back to the single line if no closing
+    `|` is found before a blank line."""
+    first = lines[start]
+    if not first.strip().startswith('|') or first.rstrip().endswith('|'):
+        return first, 1
+    joined = first.rstrip()
+    j = start + 1
+    while j < len(lines) and lines[j].strip() != '':
+        joined += ' ' + lines[j].strip()
+        j += 1
+        if joined.endswith('|'):
+            return joined, j - start
+    return first, 1
+
+
 def _is_table_separator_row(line):
     if not _TABLE_ROW_RE.match(line):
         return False
@@ -136,9 +155,12 @@ def parse_markdown_to_blocks(text):
             rows = [_split_table_row(raw_line)]
             align = _parse_table_align(_split_table_row(lines[i + 1]))
             i += 2
-            while i < n and lines[i].strip() != '' and _TABLE_ROW_RE.match(lines[i]):
-                rows.append(_split_table_row(lines[i]))
-                i += 1
+            while i < n and lines[i].strip() != '':
+                row_line, consumed = _join_wrapped_table_row(lines, i)
+                if not _TABLE_ROW_RE.match(row_line):
+                    break
+                rows.append(_split_table_row(row_line))
+                i += consumed
             blocks.append(Block('table', rows=rows, align=align))
             list_stack = []
             continue

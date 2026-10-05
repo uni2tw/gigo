@@ -51,6 +51,24 @@ window.NotesMarkdown = (function () {
     });
   }
 
+  // Mirrors _join_wrapped_table_row in markdown_blocks.py.
+  function joinWrappedTableRow(lines, start) {
+    var first = lines[start];
+    if (first.trim().charAt(0) !== '|' || /\|\s*$/.test(first)) {
+      return { line: first, consumed: 1 };
+    }
+    var joined = first.replace(/\s+$/, '');
+    var j = start + 1;
+    while (j < lines.length && lines[j].replace(/\s/g, '') !== '') {
+      joined += ' ' + lines[j].trim();
+      j += 1;
+      if (/\|$/.test(joined)) {
+        return { line: joined, consumed: j - start };
+      }
+    }
+    return { line: first, consumed: 1 };
+  }
+
   function isTableSeparatorRow(line) {
     if (!TABLE_ROW_RE.test(line)) {
       return false;
@@ -108,9 +126,13 @@ window.NotesMarkdown = (function () {
         var rows = [splitTableRow(rawLine)];
         var align = parseTableAlign(splitTableRow(lines[i + 1]));
         i += 2;
-        while (i < n && lines[i].replace(/\s/g, '') !== '' && TABLE_ROW_RE.test(lines[i])) {
-          rows.push(splitTableRow(lines[i]));
-          i += 1;
+        while (i < n && lines[i].replace(/\s/g, '') !== '') {
+          var joinedRow = joinWrappedTableRow(lines, i);
+          if (!TABLE_ROW_RE.test(joinedRow.line)) {
+            break;
+          }
+          rows.push(splitTableRow(joinedRow.line));
+          i += joinedRow.consumed;
         }
         var tableBlock = { type: 'table', level: 0, text: '', children: [], checked: false, rows: rows, align: align };
         blocks.push(tableBlock);
