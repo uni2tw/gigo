@@ -557,38 +557,9 @@ window.NotesEditor = (function () {
     onChange();
   }
 
-  // _collapsed is deliberately left out of the undo-tracked snapshot itself
-  // (snapshotBlocks -> stripInternal) since it's view state, not content --
-  // but restoreSnapshot rebuilds the whole tree from scratch, so without
-  // this every details block would revert to "never toggled" and collapse
-  // itself on every Ctrl+Z/Ctrl+Shift+Z, even one undoing an unrelated text
-  // edit made while that details block was sitting open. Carrying it over
-  // by tree position covers the common case (undo/redo that doesn't change
-  // a details block's position); a structural change around it just falls
-  // back to the existing "first time seeing this block" default.
-  function collectCollapsedStates(list, path, map) {
-    list.forEach(function (b, i) {
-      var p = path.concat(i).join('.');
-      if (b.type === 'callout' && b.calloutKind === 'details' && typeof b._collapsed === 'boolean') {
-        map[p] = b._collapsed;
-      }
-      if (b.children && b.children.length) {
-        collectCollapsedStates(b.children, path.concat(i), map);
-      }
-    });
-  }
-
-  function applyCollapsedStates(list, path, map) {
-    list.forEach(function (b, i) {
-      var p = path.concat(i).join('.');
-      if (b.type === 'callout' && b.calloutKind === 'details' && Object.prototype.hasOwnProperty.call(map, p)) {
-        b._collapsed = map[p];
-      }
-      if (b.children && b.children.length) {
-        applyCollapsedStates(b.children, path.concat(i), map);
-      }
-    });
-  }
+  // A details block's expanded/collapsed state is its `calloutOpen` (saved as
+  // `::: details open`), so it lives in the snapshot and survives undo/redo;
+  // renderCalloutBlock derives _collapsed from it on first render.
 
   function flattenWithPaths(list, path, out) {
     list.forEach(function (b, i) {
@@ -672,12 +643,9 @@ window.NotesEditor = (function () {
     var snapJson = entry.snap;
     var oldSnap = snapshotBlocks();
     var focusPath = lastFocusedBlockId ? findBlockIndexPath(blocks, lastFocusedBlockId) : null;
-    var collapsedStates = {};
-    collectCollapsedStates(blocks, [], collapsedStates);
     var plain = JSON.parse(snapJson);
     blocks = plain.length ? plain : [{ type: 'list_item', text: '', level: 0, children: [], checked: false }];
     assignIds(blocks);
-    applyCollapsedStates(blocks, [], collapsedStates);
     render();
     onChange();
     var caret = diffCaret(oldSnap, snapJson) || entry.caret;
@@ -1706,8 +1674,10 @@ window.NotesEditor = (function () {
       iconWrap.classList.toggle('collapsed', !!block._collapsed);
       iconWrap.addEventListener('click', function () {
         block._collapsed = !block._collapsed;
+        block.calloutOpen = !block._collapsed;
         render();
         focusBlock(block._id, true);
+        commitChange(true);
       });
     }
     header.appendChild(iconWrap);
@@ -1820,6 +1790,7 @@ window.NotesEditor = (function () {
         // Switching a block to "details" mid-edit should stay open so the
         // user can keep typing, unlike the "collapsed on load" default above.
         block._collapsed = false;
+        block.calloutOpen = true;
       }
       render();
       focusBlock(block._id, true);
@@ -1828,21 +1799,6 @@ window.NotesEditor = (function () {
     wrap.appendChild(kindSelect);
 
     if (isDetails) {
-      var openBtn = document.createElement('button');
-      openBtn.type = 'button';
-      openBtn.className = 'block-callout-open-toggle' + (block.calloutOpen ? ' active' : '');
-      openBtn.title = '載入時預設展開（會寫入檔案）';
-      openBtn.textContent = '預設展開';
-      openBtn.setAttribute('aria-pressed', block.calloutOpen ? 'true' : 'false');
-      openBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        block.calloutOpen = !block.calloutOpen;
-        openBtn.classList.toggle('active', block.calloutOpen);
-        openBtn.setAttribute('aria-pressed', block.calloutOpen ? 'true' : 'false');
-        commitChange(true);
-      });
-      wrap.appendChild(openBtn);
-
       var unwrapBtn = document.createElement('button');
       unwrapBtn.type = 'button';
       unwrapBtn.className = 'block-callout-unwrap';
@@ -2521,7 +2477,7 @@ window.NotesEditor = (function () {
       lang: '',
       calloutKind: 'details',
       calloutTitle: '',
-      calloutOpen: false,
+      calloutOpen: true,
       children: wrapped,
       _collapsed: false,
     };

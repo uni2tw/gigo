@@ -884,7 +884,7 @@ html, body {
 .block-callout-kind-select {
   position: absolute;
   top: 6px;
-  right: 128px;
+  right: 58px;
   border: none;
   background: none;
   font-weight: 700;
@@ -964,40 +964,12 @@ html, body {
   transition: opacity 0.12s, background 0.12s;
 }
 
-.block-callout-open-toggle {
-  position: absolute;
-  top: 6px;
-  right: 58px;
-  height: 22px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.06);
-  color: #4a4d55;
-  font-size: 12px;
-  font-family: var(--font-sans);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
-}
-
-.block-callout-open-toggle:hover {
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.block-callout-open-toggle.active {
-  background: #0969da;
-  color: #ffffff;
-  opacity: 1;
-}
-
 .block-callout-unwrap:hover {
   background: rgba(0, 0, 0, 0.12);
 }
 
 .block-callout:hover .block-callout-delete,
-.block-callout:hover .block-callout-unwrap,
-.block-callout:hover .block-callout-open-toggle {
+.block-callout:hover .block-callout-unwrap {
   opacity: 1;
 }
 
