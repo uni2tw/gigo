@@ -38,6 +38,17 @@ window.NotesMarkdown = (function () {
     return out;
   }
 
+  var DETAILS_FLAG_RE = /^(open|closed)(?:\s+(.*))?$/;
+
+  // Mirrors _split_details_flag in markdown_blocks.py.
+  function splitDetailsFlag(title) {
+    var m = DETAILS_FLAG_RE.exec(title);
+    if (!m) {
+      return { open: false, title: title };
+    }
+    return { open: m[1] === 'open', title: (m[2] || '').trim() };
+  }
+
   function splitTableRow(line) {
     var stripped = line.trim();
     if (stripped.charAt(0) === '|') {
@@ -217,12 +228,14 @@ window.NotesMarkdown = (function () {
           i += 1;
         }
         i += 1; // skip the closing ':::' (if the fence was left unclosed, this just steps past EOF harmlessly)
+        var fenceFlag = fenceKind === 'details' ? splitDetailsFlag(fenceTitle) : { open: false, title: fenceTitle };
         var fenceCalloutBlock = {
           type: 'callout',
           level: 0,
           text: '',
           calloutKind: fenceKind,
-          calloutTitle: fenceTitle,
+          calloutTitle: fenceFlag.title,
+          calloutOpen: fenceFlag.open,
           children: [],
           checked: false,
         };
@@ -384,7 +397,16 @@ window.NotesMarkdown = (function () {
           lines.push('> ' + block.text);
         } else if (block.type === 'callout') {
           var fenceKindOut = block.calloutKind || 'note';
-          lines.push('::: ' + fenceKindOut + (block.calloutTitle ? ' ' + block.calloutTitle : ''));
+          var fenceFlagOut = '';
+          if (fenceKindOut === 'details') {
+            if (block.calloutOpen) {
+              fenceFlagOut = 'open';
+            } else if (DETAILS_FLAG_RE.test(block.calloutTitle || '')) {
+              fenceFlagOut = 'closed';
+            }
+          }
+          lines.push('::: ' + fenceKindOut + (fenceFlagOut ? ' ' + fenceFlagOut : '') +
+            (block.calloutTitle ? ' ' + block.calloutTitle : ''));
           if (fenceKindOut === 'details' && block.children && block.children.length) {
             // "details" is a full nested block container: its children are
             // a self-contained mini-document, serialized inside the fence

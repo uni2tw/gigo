@@ -753,6 +753,7 @@ window.NotesEditor = (function () {
         lang: b.lang || '',
         calloutKind: b.calloutKind || 'note',
         calloutTitle: b.calloutTitle || '',
+        calloutOpen: !!b.calloutOpen,
         children: stripInternal(b.children || []),
       };
     });
@@ -1679,8 +1680,8 @@ window.NotesEditor = (function () {
     var isDetails = block.calloutKind === 'details';
     if (isDetails && block._collapsed === undefined) {
       // Loaded from file (never explicitly toggled in this session yet):
-      // matches VitePress's "::: details" always starting collapsed on view.
-      block._collapsed = true;
+      // starts collapsed unless the file marked it `::: details open`.
+      block._collapsed = !block.calloutOpen;
     }
 
     var group = document.createElement('div');
@@ -1810,6 +1811,7 @@ window.NotesEditor = (function () {
         block.children = [];
       }
       block.calloutKind = newKind;
+      block.calloutOpen = false;
       // A custom title is tied to the kind it was written for (e.g. "STOP"
       // for a danger callout); switching kind clears it back to that new
       // kind's own default label rather than carrying over a mismatched one.
@@ -1826,6 +1828,21 @@ window.NotesEditor = (function () {
     wrap.appendChild(kindSelect);
 
     if (isDetails) {
+      var openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'block-callout-open-toggle' + (block.calloutOpen ? ' active' : '');
+      openBtn.title = '載入時預設展開（會寫入檔案）';
+      openBtn.textContent = '預設展開';
+      openBtn.setAttribute('aria-pressed', block.calloutOpen ? 'true' : 'false');
+      openBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        block.calloutOpen = !block.calloutOpen;
+        openBtn.classList.toggle('active', block.calloutOpen);
+        openBtn.setAttribute('aria-pressed', block.calloutOpen ? 'true' : 'false');
+        commitChange(true);
+      });
+      wrap.appendChild(openBtn);
+
       var unwrapBtn = document.createElement('button');
       unwrapBtn.type = 'button';
       unwrapBtn.className = 'block-callout-unwrap';
@@ -2504,6 +2521,7 @@ window.NotesEditor = (function () {
       lang: '',
       calloutKind: 'details',
       calloutTitle: '',
+      calloutOpen: false,
       children: wrapped,
       _collapsed: false,
     };

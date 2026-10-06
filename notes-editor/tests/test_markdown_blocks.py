@@ -157,6 +157,18 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[0].rows[1], ['x\ny', 'z'])
         self.assertEqual(blocks_to_markdown(blocks).strip(), md)
 
+    def test_details_open_flag_round_trip(self):
+        for md, is_open, title in [
+            ('::: details open Title\nx\n:::', True, 'Title'),
+            ('::: details open\nx\n:::', True, ''),
+            ('::: details Title\nx\n:::', False, 'Title'),
+            ('::: details closed open the door\nx\n:::', False, 'open the door'),
+        ]:
+            blocks = parse_markdown_to_blocks(md)
+            self.assertEqual(blocks[0].calloutOpen, is_open, md)
+            self.assertEqual(blocks[0].calloutTitle, title, md)
+            self.assertEqual(blocks_to_markdown(blocks).strip(), md)
+
     def test_table_row_without_separator_is_plain_paragraphs(self):
         text = '| not a table | just text |\n'
         blocks = parse_markdown_to_blocks(text)

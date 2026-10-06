@@ -26,6 +26,19 @@ _CALLOUT_FENCE_END_RE = re.compile(r'^:::\s*$')
 CALLOUT_KINDS = ('note', 'tip', 'important', 'warning', 'caution', 'details')
 
 
+_DETAILS_FLAG_RE = re.compile(r'^(open|closed)(?:\s+(.*))?$')
+
+
+def _split_details_flag(title):
+    """`::: details open Title` -> (True, 'Title'). The `closed` keyword exists
+    only so a closed block whose title happens to start with "open"/"closed"
+    can still be written unambiguously."""
+    m = _DETAILS_FLAG_RE.match(title)
+    if not m:
+        return False, title
+    return m.group(1) == 'open', (m.group(2) or '').strip()
+
+
 def _split_table_row(line):
     stripped = line.strip()
     if stripped.startswith('|'):
@@ -87,10 +100,10 @@ class Block(object):
     plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind', 'calloutTitle')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind', 'calloutTitle', 'calloutOpen')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None, src='', lang='', calloutKind='note', calloutTitle=''):
+                 rows=None, align=None, src='', lang='', calloutKind='note', calloutTitle='', calloutOpen=False):
         self.type = type_
         self.text = text
         self.level = level
@@ -102,6 +115,7 @@ class Block(object):
         self.lang = lang
         self.calloutKind = calloutKind
         self.calloutTitle = calloutTitle
+        self.calloutOpen = calloutOpen
 
     def to_dict(self):
         return {
@@ -116,6 +130,7 @@ class Block(object):
             'lang': self.lang,
             'calloutKind': self.calloutKind,
             'calloutTitle': self.calloutTitle,
+            'calloutOpen': self.calloutOpen,
         }
 
     @staticmethod
@@ -131,6 +146,7 @@ class Block(object):
             lang=d.get('lang') or '',
             calloutKind=d.get('calloutKind') or 'note',
             calloutTitle=d.get('calloutTitle') or '',
+            calloutOpen=bool(d.get('calloutOpen', False)),
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -221,7 +237,11 @@ def parse_markdown_to_blocks(text):
                 i += 1
             i += 1  # skip the closing ':::' (an unclosed fence just steps past EOF harmlessly)
 
-            callout_block = Block('callout', calloutKind=fence_kind, calloutTitle=fence_title)
+            fence_open = False
+            if fence_kind == 'details':
+                fence_open, fence_title = _split_details_flag(fence_title)
+            callout_block = Block('callout', calloutKind=fence_kind, calloutTitle=fence_title,
+                                  calloutOpen=fence_open)
             if fence_kind == 'details':
                 # "details" is a full nested block container (matching VitePress,
                 # where anything -- images, headings, tables -- can live inside a
@@ -331,7 +351,14 @@ def blocks_to_markdown(blocks):
                 lines.append('> ' + block.text)
             elif block.type == 'callout':
                 kind = block.calloutKind or 'note'
-                fence_start = '::: ' + kind + (' ' + block.calloutTitle if block.calloutTitle else '')
+                fence_flag = ''
+                if kind == 'details':
+                    if block.calloutOpen:
+                        fence_flag = 'open'
+                    elif _DETAILS_FLAG_RE.match(block.calloutTitle or ''):
+                        fence_flag = 'closed'
+                fence_start = ('::: ' + kind + (' ' + fence_flag if fence_flag else '') +
+                               (' ' + block.calloutTitle if block.calloutTitle else ''))
                 lines.append(fence_start)
                 if kind == 'details' and block.children:
                     # "details" is a full nested block container: its children
