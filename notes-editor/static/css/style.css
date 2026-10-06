@@ -538,6 +538,8 @@ html, body {
 
 .block-table-del-row,
 .block-table-del-col,
+.block-table-ins-row,
+.block-table-ins-col,
 .block-table-add-col {
   width: 18px;
   height: 18px;
@@ -548,33 +550,90 @@ html, body {
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
-  opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
-}
-
-.block-table tr:hover .block-table-del-row,
-.block-table-del-row:focus {
-  opacity: 1;
-}
-
-.block-table-del-col {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-}
-
-.block-table th:hover .block-table-del-col,
-.block-table-del-col:focus {
-  opacity: 1;
+  transition: background 0.12s;
 }
 
 .block-table-add-col {
-  opacity: 1;
   font-weight: 700;
+}
+
+/* Row/column controls: a quiet gray dot hints they exist; the real buttons
+   replace it only while the pointer is over this small fixed-size area (fixed
+   so the swap doesn't resize the hover target and flicker). */
+.block-table-row-btns,
+.block-table-col-btns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Two stacked buttons must still fit in a single-line row (~31px tall). */
+.block-table-row-btns {
+  position: relative;
+  flex-direction: column;
+  gap: 1px;
+  width: 20px;
+  height: 29px;
+  margin: 0 auto;
+}
+
+.block-table-col-btns {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 18px;
+  gap: 2px;
+}
+
+/* The dot sits exactly where the "+" button appears on hover: top button of
+   the row stack (7px down), left button of the column pair (12px across). */
+.block-table-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: #dcdee3;
+}
+
+.block-table-row-btns .block-table-dot {
+  left: 50%;
+  top: 7px;
+}
+
+.block-table-col-btns .block-table-dot {
+  left: 12px;
+  top: 50%;
+}
+
+.block-table-row-btns button,
+.block-table-col-btns button {
+  display: none;
+}
+
+.block-table-row-btns .block-table-ins-row,
+.block-table-row-btns .block-table-del-row {
+  width: 18px;
+  height: 14px;
+  font-size: 12px;
+}
+
+.block-table-row-btns:hover .block-table-dot,
+.block-table-col-btns:hover .block-table-dot {
+  display: none;
+}
+
+.block-table-row-btns:hover button,
+.block-table-col-btns:hover button {
+  display: block;
 }
 
 .block-table-del-row:hover,
 .block-table-del-col:hover,
+.block-table-ins-row:hover,
+.block-table-ins-col:hover,
 .block-table-add-col:hover {
   background: var(--sidebar-border);
 }

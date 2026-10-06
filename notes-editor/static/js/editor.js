@@ -859,6 +859,45 @@ window.NotesEditor = (function () {
     commitChange(true);
   }
 
+  // rowIndex is the row the new one goes above; the header (0) has nothing
+  // above it to insert into, and appending below the last row is addTableRow.
+  function insertTableRowAbove(block, rowIndex) {
+    if (rowIndex < 1 || rowIndex >= block.rows.length) {
+      return;
+    }
+    var colCount = block.rows[0] ? block.rows[0].length : 1;
+    var newRow = [];
+    for (var i = 0; i < colCount; i++) {
+      newRow.push('');
+    }
+    block.rows.splice(rowIndex, 0, newRow);
+    render();
+    focusTableCell(block._id, rowIndex, 0);
+    commitChange(true);
+  }
+
+  // A quiet gray dot hinting that the row/column controls live here; the real
+  // buttons only replace it while the pointer is over this small area.
+  function createTableDot() {
+    var dot = document.createElement('span');
+    dot.className = 'block-table-dot';
+    return dot;
+  }
+
+  function insertTableColumnBefore(block, colIndex) {
+    if (colIndex < 0 || !block.rows[0] || colIndex >= block.rows[0].length) {
+      return;
+    }
+    block.rows.forEach(function (r) {
+      r.splice(colIndex, 0, '');
+    });
+    block.align = block.align || [];
+    block.align.splice(colIndex, 0, null);
+    render();
+    focusTableCell(block._id, 0, colIndex);
+    commitChange(true);
+  }
+
   function removeTableRow(block, rowIndex) {
     if (rowIndex <= 0 || rowIndex >= block.rows.length) {
       return;
@@ -1099,6 +1138,21 @@ window.NotesEditor = (function () {
       var cornerCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
       cornerCell.className = 'block-table-control-cell';
       if (rowIndex > 0) {
+        var rowBtns = document.createElement('div');
+        rowBtns.className = 'block-table-row-btns';
+        rowBtns.appendChild(createTableDot());
+
+        var insRowBtn = document.createElement('button');
+        insRowBtn.type = 'button';
+        insRowBtn.className = 'block-table-ins-row';
+        insRowBtn.title = '在上方插入一列';
+        insRowBtn.textContent = '+';
+        insRowBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          insertTableRowAbove(block, rowIndex);
+        });
+        rowBtns.appendChild(insRowBtn);
+
         var delRowBtn = document.createElement('button');
         delRowBtn.type = 'button';
         delRowBtn.className = 'block-table-del-row';
@@ -1108,7 +1162,8 @@ window.NotesEditor = (function () {
           e.stopPropagation();
           removeTableRow(block, rowIndex);
         });
-        cornerCell.appendChild(delRowBtn);
+        rowBtns.appendChild(delRowBtn);
+        cornerCell.appendChild(rowBtns);
       }
       tr.appendChild(cornerCell);
 
@@ -1149,6 +1204,22 @@ window.NotesEditor = (function () {
         }
 
         if (rowIndex === 0) {
+          var colBtns = document.createElement('div');
+          colBtns.className = 'block-table-col-btns';
+          colBtns.appendChild(createTableDot());
+
+          var insColBtn = document.createElement('button');
+          insColBtn.type = 'button';
+          insColBtn.className = 'block-table-ins-col';
+          insColBtn.title = '在左邊插入一欄';
+          insColBtn.textContent = '+';
+          insColBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            insertTableColumnBefore(block, colIndex);
+          });
+          colBtns.appendChild(insColBtn);
+          cell.appendChild(colBtns);
+
           var delColBtn = document.createElement('button');
           delColBtn.type = 'button';
           delColBtn.className = 'block-table-del-col';
@@ -1158,7 +1229,7 @@ window.NotesEditor = (function () {
             e.stopPropagation();
             removeTableColumn(block, colIndex);
           });
-          cell.appendChild(delColBtn);
+          colBtns.appendChild(delColBtn);
         }
 
         tr.appendChild(cell);
