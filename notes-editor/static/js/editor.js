@@ -1237,7 +1237,8 @@ window.NotesEditor = (function () {
 
       if (rowIndex === 0) {
         var addColCell = document.createElement('th');
-        addColCell.className = 'block-table-control-cell';
+        addColCell.className = 'block-table-control-cell block-table-add-col-cell';
+        addColCell.appendChild(createTableDot());
         var addColBtn = document.createElement('button');
         addColBtn.type = 'button';
         addColBtn.className = 'block-table-add-col';
@@ -1258,6 +1259,7 @@ window.NotesEditor = (function () {
     var addRowCell = document.createElement('td');
     addRowCell.className = 'block-table-control-cell block-table-add-row-cell';
     addRowCell.colSpan = colCount + 2;
+    addRowCell.appendChild(createTableDot());
     var addRowBtn = document.createElement('button');
     addRowBtn.type = 'button';
     addRowBtn.className = 'block-table-add-row';

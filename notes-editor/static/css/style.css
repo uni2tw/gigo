@@ -639,8 +639,40 @@ html, body {
 }
 
 .block-table-add-row-cell {
+  position: relative;
   border-color: transparent;
   padding: 2px 0 0;
+}
+
+.block-table-add-col-cell {
+  position: relative;
+}
+
+/* The add-row / add-col buttons are hidden behind a dot (placed where their
+   "+" glyph sits) until the pointer is over their cell. */
+.block-table-add-row-cell .block-table-dot {
+  left: 12px;
+  top: 14px;
+}
+
+.block-table-add-col-cell .block-table-dot {
+  left: 50%;
+  top: 50%;
+}
+
+.block-table-add-row-cell .block-table-add-row,
+.block-table-add-col-cell .block-table-add-col {
+  visibility: hidden;
+}
+
+.block-table-add-row-cell:hover .block-table-add-row,
+.block-table-add-col-cell:hover .block-table-add-col {
+  visibility: visible;
+}
+
+.block-table-add-row-cell:hover .block-table-dot,
+.block-table-add-col-cell:hover .block-table-dot {
+  display: none;
 }
 
 .block-table-add-row {
