@@ -52,21 +52,47 @@ window.NotesTree = (function () {
       closeOpenDropdown();
     });
 
+    // Moving to the root only counts when released on the tree's own empty
+    // space. Anything released over a node row (a note, or a folder row that
+    // handles its own drop) must not bubble up and be treated as "move to root".
     container.addEventListener('dragover', function (e) {
+      if (e.target !== container) {
+        return;
+      }
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       container.classList.add('drag-over-root');
     });
     container.addEventListener('dragleave', function (e) {
-      if (e.target === container) {
+      if (e.target === container || !container.contains(e.relatedTarget)) {
         container.classList.remove('drag-over-root');
       }
     });
     container.addEventListener('drop', function (e) {
+      clearDragState();
+      if (e.target !== container) {
+        return;
+      }
       e.preventDefault();
-      container.classList.remove('drag-over-root');
       var sourcePath = e.dataTransfer.getData('text/plain');
       handleDropOnRoot(sourcePath);
+    });
+
+    // dragend fires on the dragged row, but a drop that re-renders the tree
+    // removes that row first, and a drop outside any target never reaches our
+    // handlers -- so also clear every drag highlight from the document.
+    document.addEventListener('dragend', clearDragState);
+    document.addEventListener('drop', clearDragState);
+  }
+
+  function clearDragState() {
+    if (!container) {
+      return;
+    }
+    container.classList.remove('drag-over-root');
+    Array.prototype.forEach.call(container.querySelectorAll('.drag-over, .dragging'), function (el) {
+      el.classList.remove('drag-over');
+      el.classList.remove('dragging');
     });
   }
 
@@ -180,13 +206,17 @@ window.NotesTree = (function () {
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('drag-over');
       });
-      row.addEventListener('dragleave', function () {
-        row.classList.remove('drag-over');
+      row.addEventListener('dragleave', function (e) {
+        // dragleave also fires when moving onto this row's own children
+        // (icon, label...); only clear when truly leaving the row.
+        if (!row.contains(e.relatedTarget)) {
+          row.classList.remove('drag-over');
+        }
       });
       row.addEventListener('drop', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        row.classList.remove('drag-over');
+        clearDragState();
         var sourcePath = e.dataTransfer.getData('text/plain');
         handleDropOnFolder(sourcePath, node);
       });
