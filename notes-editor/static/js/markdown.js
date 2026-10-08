@@ -337,6 +337,15 @@ window.NotesMarkdown = (function () {
         continue;
       }
 
+      if (listStack.length && /^[ \t]/.test(rawLine)) {
+        // An indented line right under a list item continues that item (a soft
+        // line break inside it) instead of starting a paragraph. Mirrors the
+        // Python parser.
+        listStack[listStack.length - 1].block.text += '\n' + rawLine.trim();
+        i += 1;
+        continue;
+      }
+
       var paragraphBlock = { type: 'paragraph', level: 0, text: rawLine.trim(), children: [], checked: false };
       blocks.push(paragraphBlock);
       listStack = [];
@@ -345,6 +354,18 @@ window.NotesMarkdown = (function () {
     }
 
     return { blocks: blocks, ranges: ranges };
+  }
+
+  // One list-item line plus indented continuation lines for any soft line
+  // breaks inside its text, aligned under the item's text.
+  function listItemLines(prefixIndent, marker, text) {
+    var parts = text.split('\n');
+    var pad = repeatStr(' ', prefixIndent.length + marker.length);
+    var out = [prefixIndent + marker + parts[0]];
+    for (var k = 1; k < parts.length; k++) {
+      out.push(pad + parts[k]);
+    }
+    return out;
   }
 
   function formatTableRow(cells) {
@@ -419,11 +440,11 @@ window.NotesMarkdown = (function () {
           }
           lines.push(':::');
         } else if (block.type === 'ordered_item') {
-          lines.push(repeatStr(' ', depth * INDENT_SIZE) + orderedCounter + '. ' + block.text);
+          Array.prototype.push.apply(lines, listItemLines(repeatStr(' ', depth * INDENT_SIZE), orderedCounter + '. ', block.text));
         } else if (block.type === 'checklist_item') {
-          lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- [' + (block.checked ? 'x' : ' ') + '] ' + block.text);
+          Array.prototype.push.apply(lines, listItemLines(repeatStr(' ', depth * INDENT_SIZE), '- [' + (block.checked ? 'x' : ' ') + '] ', block.text));
         } else if (block.type === 'list_item') {
-          lines.push(repeatStr(' ', depth * INDENT_SIZE) + '- ' + block.text);
+          Array.prototype.push.apply(lines, listItemLines(repeatStr(' ', depth * INDENT_SIZE), '- ', block.text));
         } else if (block.type === 'image') {
           lines.push('![' + (block.text || '') + '](' + block.src + ')');
         } else if (block.type === 'hr') {

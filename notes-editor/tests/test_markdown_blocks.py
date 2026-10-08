@@ -169,6 +169,18 @@ class MarkdownBlocksTests(unittest.TestCase):
             self.assertEqual(blocks[0].calloutTitle, title, md)
             self.assertEqual(blocks_to_markdown(blocks).strip(), md)
 
+    def test_list_item_continuation_lines_round_trip(self):
+        md = '1. first\n   second\n2. next\n- a\n  - b\n    cont'
+        blocks = parse_markdown_to_blocks(md)
+        self.assertEqual(blocks[0].text, 'first\nsecond')
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual(blocks[2].children[0].text, 'b\ncont')
+        self.assertEqual(blocks_to_markdown(blocks).strip(), md)
+
+    def test_indented_line_after_blank_line_is_not_a_continuation(self):
+        blocks = parse_markdown_to_blocks('- a\n\n  b')
+        self.assertEqual([b.type for b in blocks], ['list_item', 'paragraph'])
+
     def test_table_row_without_separator_is_plain_paragraphs(self):
         text = '| not a table | just text |\n'
         blocks = parse_markdown_to_blocks(text)

@@ -306,11 +306,27 @@ def parse_markdown_to_blocks(text):
             i += 1
             continue
 
+        if list_stack and raw_line[0] in ' \t':
+            # An indented line right under a list item continues that item
+            # (a soft line break inside it, e.g. from Shift+Enter or pasting
+            # several lines into one item) instead of starting a paragraph.
+            list_stack[-1][1].text += '\n' + raw_line.strip()
+            i += 1
+            continue
+
         blocks.append(Block('paragraph', raw_line.strip()))
         list_stack = []
         i += 1
 
     return blocks
+
+
+def _list_item_lines(prefix_indent, marker, text):
+    """One list-item line plus indented continuation lines for any soft line
+    breaks inside its text, aligned under the item's text."""
+    first, *rest = text.split('\n')
+    pad = ' ' * (len(prefix_indent) + len(marker))
+    return [prefix_indent + marker + first] + [pad + line for line in rest]
 
 
 def _format_table_row(cells):
@@ -370,12 +386,12 @@ def blocks_to_markdown(blocks):
                         lines.append(body_line)
                 lines.append(':::')
             elif block.type == 'ordered_item':
-                lines.append((' ' * (depth * INDENT_SIZE)) + '%d. ' % ordered_counter + block.text)
+                lines.extend(_list_item_lines(' ' * (depth * INDENT_SIZE), '%d. ' % ordered_counter, block.text))
             elif block.type == 'checklist_item':
                 mark = 'x' if block.checked else ' '
-                lines.append((' ' * (depth * INDENT_SIZE)) + '- [%s] ' % mark + block.text)
+                lines.extend(_list_item_lines(' ' * (depth * INDENT_SIZE), '- [%s] ' % mark, block.text))
             elif block.type == 'list_item':
-                lines.append((' ' * (depth * INDENT_SIZE)) + '- ' + block.text)
+                lines.extend(_list_item_lines(' ' * (depth * INDENT_SIZE), '- ', block.text))
             elif block.type == 'image':
                 lines.append('![' + (block.text or '') + '](' + block.src + ')')
             elif block.type == 'hr':

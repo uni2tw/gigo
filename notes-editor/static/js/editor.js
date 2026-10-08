@@ -270,6 +270,10 @@ window.NotesEditor = (function () {
         return;
       }
       e.preventDefault();
+      if (LIST_ITEM_TYPES.indexOf(block.type) !== -1 && parsedBlocks.every(function (b) { return b.type === 'paragraph'; })) {
+        pasteLinesIntoListItem(block, text, textEl);
+        return;
+      }
       pasteBlocksAt(block, parsedBlocks, textEl);
     });
 
@@ -1436,6 +1440,24 @@ window.NotesEditor = (function () {
       }
     });
     return zone;
+  }
+
+  var LIST_ITEM_TYPES = ['list_item', 'ordered_item', 'checklist_item'];
+
+  // Several plain lines pasted into a list item stay inside that item as soft
+  // line breaks (shown as continuation lines under the marker), rather than
+  // replacing the item with a run of unrelated paragraphs.
+  function pasteLinesIntoListItem(block, text, textEl) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l !== ''; });
+    textEl.focus();
+    lines.forEach(function (line, i) {
+      if (i > 0) {
+        document.execCommand('insertLineBreak');
+      }
+      document.execCommand('insertText', false, line);
+    });
+    block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    commitChange(true);
   }
 
   function pasteBlocksAt(block, parsedBlocks, textEl) {
