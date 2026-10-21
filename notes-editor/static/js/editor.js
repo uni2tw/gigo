@@ -2125,6 +2125,16 @@ window.NotesEditor = (function () {
       commitChange(true);
       return;
     }
+    if (/^```\s$/.test(raw) && (!block.children || !block.children.length)) {
+      block.type = 'code_block';
+      block.level = 0;
+      block.lang = '';
+      block.text = '';
+      render();
+      focusCodeBlock(block._id);
+      commitChange(true);
+      return;
+    }
     var checklistLiveMatch = /^(?:[-*]\s*)?\[([ xX]?)\]\s+$/.exec(raw);
     if (checklistLiveMatch) {
       block.type = 'checklist_item';
