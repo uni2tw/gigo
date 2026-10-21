@@ -822,21 +822,67 @@ html, body {
   opacity: 1;
 }
 
-.block-code-textarea {
-  display: block;
-  width: 100%;
-  min-height: 1.5em;
-  border: none;
-  outline: none;
-  resize: vertical;
-  background: none;
-  color: #2d2f36;
+.block-code-stack {
+  position: relative;
+}
+
+.block-code-textarea,
+.block-code-hl {
   font-family: "Cascadia Code", Consolas, "Courier New", monospace;
   font-size: 13px;
   line-height: 1.6;
   white-space: pre;
+  padding: 0;
+  margin: 0;
+  border: none;
+  tab-size: 8;
+}
+
+.block-code-textarea {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 1.5em;
+  outline: none;
+  resize: vertical;
+  background: none;
+  color: #2d2f36;
   overflow-x: auto;
 }
+
+/* Colored copy of the text, stacked behind the (transparent-text) textarea;
+   font metrics above must stay identical or the caret drifts off the text. */
+.block-code-hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: #2d2f36;
+  background: none;
+}
+
+.block-code-stack.has-hl .block-code-textarea {
+  color: transparent;
+  caret-color: #2d2f36;
+}
+
+.block-code-stack.has-hl .block-code-textarea::selection {
+  background: rgba(80, 120, 255, 0.3);
+  color: transparent;
+}
+
+.hl-kw { color: #cf222e; }
+.hl-fn { color: #8250df; }
+.hl-string { color: #0a3069; }
+.hl-number { color: #0550ae; }
+.hl-comment { color: #6e7781; }
+.hl-ident { color: #953800; }
+.hl-var { color: #953800; }
+.hl-key { color: #0550ae; }
+.hl-literal { color: #cf222e; }
 
 .block-code-delete {
   position: absolute;

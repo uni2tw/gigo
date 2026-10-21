@@ -1642,19 +1642,50 @@ window.NotesEditor = (function () {
       langSelect.appendChild(opt);
     });
     langSelect.value = currentLang;
-    langSelect.addEventListener('change', function () {
-      block.lang = langSelect.value;
-      commitChange(true);
-    });
     wrap.appendChild(langSelect);
+
+    // Syntax colors: a <pre> with the colored text sits behind the textarea,
+    // whose own text is made transparent (see .has-hl in style.css), so typing,
+    // caret, selection and undo all stay native textarea behavior.
+    var stack = document.createElement('div');
+    stack.className = 'block-code-stack';
+    var hlLayer = document.createElement('pre');
+    hlLayer.className = 'block-code-hl';
+    hlLayer.setAttribute('aria-hidden', 'true');
+    stack.appendChild(hlLayer);
 
     var textarea = document.createElement('textarea');
     textarea.className = 'block-code-textarea';
     textarea.spellcheck = false;
     textarea.value = block.text || '';
     textarea.rows = 1;
+
+    function refreshHighlight() {
+      var html = window.NotesHighlight.highlight(block.lang || '', textarea.value);
+      if (html === null) {
+        stack.classList.remove('has-hl');
+        hlLayer.innerHTML = '';
+        return;
+      }
+      stack.classList.add('has-hl');
+      // A trailing newline would otherwise leave the last empty line unrendered.
+      hlLayer.innerHTML = html + '\n';
+      hlLayer.scrollLeft = textarea.scrollLeft;
+      hlLayer.scrollTop = textarea.scrollTop;
+    }
+
+    langSelect.addEventListener('change', function () {
+      block.lang = langSelect.value;
+      refreshHighlight();
+      commitChange(true);
+    });
+    textarea.addEventListener('scroll', function () {
+      hlLayer.scrollLeft = textarea.scrollLeft;
+      hlLayer.scrollTop = textarea.scrollTop;
+    });
     textarea.addEventListener('input', function () {
       block.text = textarea.value;
+      refreshHighlight();
       autoGrowTextarea(textarea);
       commitChange(false);
     });
@@ -1695,7 +1726,9 @@ window.NotesEditor = (function () {
         }
       }
     });
-    wrap.appendChild(textarea);
+    stack.appendChild(textarea);
+    wrap.appendChild(stack);
+    refreshHighlight();
 
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
