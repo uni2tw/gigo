@@ -882,8 +882,10 @@ html, body {
 .hl-comment { color: #6e7781; }
 .hl-ident { color: #953800; }
 .hl-var { color: #953800; }
-.hl-key { color: #0550ae; }
-.hl-literal { color: #cf222e; }
+.hl-json-key { color: #0451a5; }
+.hl-json-string { color: #a31515; }
+.hl-json-number { color: #098658; }
+.hl-json-literal { color: #0000ff; }
 
 .block-code-delete {
   position: absolute;

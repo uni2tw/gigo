@@ -38,12 +38,12 @@ window.NotesHighlight = (function () {
       var tok = m[0];
       if (tok.charAt(0) === '"') {
         var after = src.slice(m.index + tok.length).match(/^\s*:/);
-        return after ? 'key' : 'string';
+        return after ? 'json-key' : 'json-string';
       }
       if (/^(true|false|null)$/.test(tok)) {
-        return 'literal';
+        return 'json-literal';
       }
-      return 'number';
+      return 'json-number';
     });
   }
 
