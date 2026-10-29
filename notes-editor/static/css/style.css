@@ -1063,9 +1063,6 @@ html, body {
   transition: opacity 0.12s, background 0.12s;
 }
 
-.block-callout:focus-within .block-callout-kind-select {
-  opacity: 1;
-}
 
 .block-callout-kind-select:hover,
 .block-callout-kind-select:focus {
@@ -1152,8 +1149,14 @@ html, body {
   background: rgba(0, 0, 0, 0.12);
 }
 
+/* The type select, unwrap and delete controls share one rule: visible while
+   the pointer is over the callout or the caret is editing inside it. */
+.block-callout:hover .block-callout-kind-select,
 .block-callout:hover .block-callout-delete,
-.block-callout:hover .block-callout-unwrap {
+.block-callout:hover .block-callout-unwrap,
+.block-callout:focus-within .block-callout-kind-select,
+.block-callout:focus-within .block-callout-delete,
+.block-callout:focus-within .block-callout-unwrap {
   opacity: 1;
 }
 
