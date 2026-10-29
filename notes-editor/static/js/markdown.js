@@ -8,6 +8,17 @@ window.NotesMarkdown = (function () {
   var TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
   var TABLE_SEP_CELL_RE = /^:?-+:?$/;
   var IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
+  // Obsidian-style size suffix in the alt text: `![alt|200](a.png)` (pixels)
+  // or `![alt|50%](a.png)` (percent of the column width). Mirrors the Python parser.
+  var IMAGE_SIZE_RE = /^(.*)\|(\d+%?)$/;
+
+  function splitImageSize(alt) {
+    var m = IMAGE_SIZE_RE.exec(alt);
+    if (!m || parseInt(m[2], 10) <= 0) {
+      return { alt: alt, width: '' };
+    }
+    return { alt: m[1], width: m[2] };
+  }
   var HR_RE = /^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$/;
   var FENCE_RE = /^```(\w*)\s*$/;
   // Legacy GFM-alert callout syntax (`> [!NOTE]` + `> `-prefixed body lines).
@@ -171,7 +182,8 @@ window.NotesMarkdown = (function () {
 
       var imageMatch = IMAGE_RE.exec(rawLine.trim());
       if (imageMatch) {
-        var imageBlock = { type: 'image', level: 0, text: imageMatch[1], src: imageMatch[2], children: [], checked: false };
+        var imageParts = splitImageSize(imageMatch[1]);
+        var imageBlock = { type: 'image', level: 0, text: imageParts.alt, src: imageMatch[2], width: imageParts.width, children: [], checked: false };
         blocks.push(imageBlock);
         listStack = [];
         i += 1;
@@ -446,7 +458,7 @@ window.NotesMarkdown = (function () {
         } else if (block.type === 'list_item') {
           Array.prototype.push.apply(lines, listItemLines(repeatStr(' ', depth * INDENT_SIZE), '- ', block.text));
         } else if (block.type === 'image') {
-          lines.push('![' + (block.text || '') + '](' + block.src + ')');
+          lines.push('![' + (block.text || '') + (block.width ? '|' + block.width : '') + '](' + block.src + ')');
         } else if (block.type === 'hr') {
           lines.push('---');
         } else if (block.type === 'code_block') {

@@ -11,6 +11,16 @@ _TABLE_ROW_RE = re.compile(r'^\s*\|.*\|\s*$')
 _TABLE_SEP_CELL_RE = re.compile(r'^:?-+:?$')
 _BR_RE = re.compile(r'<br\s*/?>', re.IGNORECASE)
 _IMAGE_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)$')
+# Obsidian-style size suffix in the alt text: `![alt|200](a.png)` (pixels) or
+# `![alt|50%](a.png)` (percent of the column width).
+_IMAGE_SIZE_RE = re.compile(r'^(.*)\|(\d+%?)$')
+
+
+def _split_image_size(alt):
+    m = _IMAGE_SIZE_RE.match(alt)
+    if not m or int(m.group(2).rstrip('%')) <= 0:
+        return alt, ''
+    return m.group(1), m.group(2)
 _HR_RE = re.compile(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$')
 _FENCE_RE = re.compile(r'^```(\w*)\s*$')
 # Legacy GFM-alert callout syntax (`> [!NOTE]` + `> `-prefixed body lines).
@@ -100,10 +110,10 @@ class Block(object):
     plain paragraph lines).
     """
 
-    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind', 'calloutTitle', 'calloutOpen')
+    __slots__ = ('type', 'text', 'level', 'children', 'checked', 'rows', 'align', 'src', 'lang', 'calloutKind', 'calloutTitle', 'calloutOpen', 'width')
 
     def __init__(self, type_='paragraph', text='', level=0, children=None, checked=False,
-                 rows=None, align=None, src='', lang='', calloutKind='note', calloutTitle='', calloutOpen=False):
+                 rows=None, align=None, src='', lang='', calloutKind='note', calloutTitle='', calloutOpen=False, width=''):
         self.type = type_
         self.text = text
         self.level = level
@@ -116,6 +126,7 @@ class Block(object):
         self.calloutKind = calloutKind
         self.calloutTitle = calloutTitle
         self.calloutOpen = calloutOpen
+        self.width = width
 
     def to_dict(self):
         return {
@@ -131,6 +142,7 @@ class Block(object):
             'calloutKind': self.calloutKind,
             'calloutTitle': self.calloutTitle,
             'calloutOpen': self.calloutOpen,
+            'width': self.width,
         }
 
     @staticmethod
@@ -147,6 +159,7 @@ class Block(object):
             calloutKind=d.get('calloutKind') or 'note',
             calloutTitle=d.get('calloutTitle') or '',
             calloutOpen=bool(d.get('calloutOpen', False)),
+            width=d.get('width') or '',
         )
         block.children = [Block.from_dict(c) for c in d.get('children', [])]
         return block
@@ -197,7 +210,8 @@ def parse_markdown_to_blocks(text):
 
         image_match = _IMAGE_RE.match(raw_line.strip())
         if image_match:
-            blocks.append(Block('image', text=image_match.group(1), src=image_match.group(2)))
+            image_alt, image_width = _split_image_size(image_match.group(1))
+            blocks.append(Block('image', text=image_alt, src=image_match.group(2), width=image_width))
             list_stack = []
             i += 1
             continue
@@ -393,7 +407,7 @@ def blocks_to_markdown(blocks):
             elif block.type == 'list_item':
                 lines.extend(_list_item_lines(' ' * (depth * INDENT_SIZE), '- ', block.text))
             elif block.type == 'image':
-                lines.append('![' + (block.text or '') + '](' + block.src + ')')
+                lines.append('![' + (block.text or '') + ('|' + block.width if block.width else '') + '](' + block.src + ')')
             elif block.type == 'hr':
                 lines.append('---')
             elif block.type == 'code_block':

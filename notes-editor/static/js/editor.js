@@ -726,6 +726,7 @@ window.NotesEditor = (function () {
         calloutKind: b.calloutKind || 'note',
         calloutTitle: b.calloutTitle || '',
         calloutOpen: !!b.calloutOpen,
+        width: b.width || '',
         children: stripInternal(b.children || []),
       };
     });
@@ -1298,6 +1299,16 @@ window.NotesEditor = (function () {
     img.className = 'block-image';
     img.src = window.NotesApi.fileUrl(imageBaseDir ? imageBaseDir + '/' + block.src : block.src);
     img.alt = block.text || '';
+    if (block.width) {
+      if (/%$/.test(block.width)) {
+        // A percentage must resolve against the row, not against this shrink-
+        // to-fit wrapper (which is sized by the image itself): size the wrapper.
+        wrap.style.width = block.width;
+        img.style.width = '100%';
+      } else {
+        img.style.width = block.width + 'px';
+      }
+    }
     wrap.appendChild(img);
 
     var delBtn = document.createElement('button');
@@ -1323,10 +1334,78 @@ window.NotesEditor = (function () {
     });
     wrap.appendChild(copyBtn);
 
+    var sizeBtn = document.createElement('button');
+    sizeBtn.type = 'button';
+    sizeBtn.className = 'block-image-size';
+    sizeBtn.title = '調整圖片大小';
+    sizeBtn.textContent = block.width ? (/%$/.test(block.width) ? block.width : block.width + 'px') : '尺寸';
+    wrap.appendChild(sizeBtn);
+
+    var sizeMenu = document.createElement('div');
+    sizeMenu.className = 'block-format-dropdown block-image-size-menu';
+    sizeMenu.hidden = true;
+
+    function applyImageWidth(width) {
+      block.width = width;
+      render();
+      commitChange(true);
+    }
+
+    function addSizeItem(label, active, onPick) {
+      var item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = label;
+      if (active) {
+        item.classList.add('active');
+      }
+      item.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closeOpenDropdown();
+        onPick();
+      });
+      sizeMenu.appendChild(item);
+    }
+
+    IMAGE_SIZE_PRESETS.forEach(function (preset) {
+      addSizeItem(preset, block.width === preset, function () {
+        applyImageWidth(preset);
+      });
+    });
+    addSizeItem('恢復預設', !block.width, function () {
+      applyImageWidth('');
+    });
+    addSizeItem('自訂…', false, function () {
+      window.NotesModal.prompt('輸入圖片寬度：像素（例如 300）或百分比（例如 40%）', block.width || '').then(function (input) {
+        if (input === null || input === undefined) {
+          return;
+        }
+        var m = /^\s*(\d+)\s*(%|px)?\s*$/i.exec(input);
+        if (!m || parseInt(m[1], 10) <= 0) {
+          window.NotesModal.notify('請輸入像素（例如 300）或百分比（例如 40%）。', '確定');
+          return;
+        }
+        applyImageWidth(m[1] + (m[2] === '%' ? '%' : ''));
+      });
+    });
+
+    sizeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (openDropdown === sizeMenu) {
+        closeOpenDropdown();
+        return;
+      }
+      closeOpenDropdown();
+      sizeMenu.hidden = false;
+      openDropdown = sizeMenu;
+    });
+    wrap.appendChild(sizeMenu);
+
     row.appendChild(wrap);
     group.appendChild(row);
     return group;
   }
+
+  var IMAGE_SIZE_PRESETS = ['25%', '50%', '75%', '100%'];
 
   // The async Clipboard API only reliably accepts image/png, so every format
   // (jpg/gif/webp) is redrawn onto a canvas and re-encoded as PNG; an animated

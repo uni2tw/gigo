@@ -181,6 +181,15 @@ class MarkdownBlocksTests(unittest.TestCase):
         blocks = parse_markdown_to_blocks('- a\n\n  b')
         self.assertEqual([b.type for b in blocks], ['list_item', 'paragraph'])
 
+    def test_image_size_suffix_round_trip(self):
+        for md, alt, width in [('![Sample|200](a.png)', 'Sample', '200'), ('![Sample|50%](a.png)', 'Sample', '50%'),
+                               ('![|30%](a.png)', '', '30%'), ('![Sample](a.png)', 'Sample', ''),
+                               ('![a|b](a.png)', 'a|b', ''), ('![Sample|0](a.png)', 'Sample|0', ''),
+                               ('![x|100x50](a.png)', 'x|100x50', '')]:
+            block = parse_markdown_to_blocks(md)[0]
+            self.assertEqual((block.type, block.text, block.width), ('image', alt, width), md)
+            self.assertEqual(blocks_to_markdown([block]).strip(), md)
+
     def test_table_row_without_separator_is_plain_paragraphs(self):
         text = '| not a table | just text |\n'
         blocks = parse_markdown_to_blocks(text)
