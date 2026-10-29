@@ -270,6 +270,14 @@ window.NotesEditor = (function () {
         return;
       }
       e.preventDefault();
+      // A flat callout (note/tip/...) body is plain text only, so whatever is
+      // pasted there must stay inside it instead of becoming blocks after it.
+      var inFlatCallout = block.type === 'callout' && block.calloutKind !== 'details'
+        && textEl.classList.contains('block-callout-text');
+      if (inFlatCallout) {
+        pasteLinesIntoListItem(block, text, textEl, true);
+        return;
+      }
       if (LIST_ITEM_TYPES.indexOf(block.type) !== -1 && parsedBlocks.every(function (b) { return b.type === 'paragraph'; })) {
         pasteLinesIntoListItem(block, text, textEl);
         return;
@@ -1526,9 +1534,22 @@ window.NotesEditor = (function () {
   // Several plain lines pasted into a list item stay inside that item as soft
   // line breaks (shown as continuation lines under the marker), rather than
   // replacing the item with a run of unrelated paragraphs.
-  function pasteLinesIntoListItem(block, text, textEl) {
+  // With startOnNewLine, pasting at the end of existing text starts on its own
+  // line (the user pastes "under" what is there) instead of gluing onto it.
+  function pasteLinesIntoListItem(block, text, textEl, startOnNewLine) {
     var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l !== ''; });
     textEl.focus();
+    if (startOnNewLine && textEl.textContent !== '') {
+      var sel = window.getSelection();
+      if (sel.rangeCount && sel.isCollapsed) {
+        var tail = document.createRange();
+        tail.selectNodeContents(textEl);
+        tail.setStart(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+        if (tail.toString() === '') {
+          document.execCommand('insertLineBreak');
+        }
+      }
+    }
     lines.forEach(function (line, i) {
       if (i > 0) {
         document.execCommand('insertLineBreak');
