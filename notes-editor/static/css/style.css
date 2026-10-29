@@ -1084,16 +1084,18 @@ html, body {
   margin-left: 0;
 }
 
-/* Without a header row the top-right controls would sit on top of the first
-   line of text, so they sit just above the box's top edge instead (flush
-   with it: a gap would drop :hover while the pointer travels to them). */
-.block-callout-no-header .block-callout-kind-select,
-.block-callout-no-header .block-callout-delete {
-  top: auto;
-  bottom: 100%;
-  background: #ffffff;
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
+/* Without a header row the controls sit inside the box's top-right corner. A
+   float reserves room for them on the first line only, so the first line of
+   text wraps around them and every later line keeps the full width. */
+.block-callout-no-header .block-callout-text::before {
+  content: '';
+  float: right;
+  width: 112px;
+  height: 22px;
+}
+
+.block-callout-no-header .block-callout-kind-select {
+  right: 34px;
 }
 
 .block-callout-title {
