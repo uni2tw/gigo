@@ -1088,10 +1088,13 @@ html, body {
 }
 
 /* Without a header row the top-right controls would sit on top of the first
-   line of text, so they straddle the box's top edge instead. */
+   line of text, so they sit just above the box's top edge instead (not
+   overlapping the border). */
 .block-callout-no-header .block-callout-kind-select,
 .block-callout-no-header .block-callout-delete {
-  top: -12px;
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 3px;
   background: #ffffff;
   border: 1px solid var(--sidebar-border);
   border-radius: 6px;
