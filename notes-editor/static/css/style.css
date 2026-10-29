@@ -1085,13 +1085,12 @@ html, body {
 }
 
 /* Without a header row the top-right controls would sit on top of the first
-   line of text, so they sit just above the box's top edge instead (not
-   overlapping the border). */
+   line of text, so they sit just above the box's top edge instead (flush
+   with it: a gap would drop :hover while the pointer travels to them). */
 .block-callout-no-header .block-callout-kind-select,
 .block-callout-no-header .block-callout-delete {
   top: auto;
   bottom: 100%;
-  margin-bottom: 3px;
   background: #ffffff;
   border: 1px solid var(--sidebar-border);
   border-radius: 6px;
@@ -1149,14 +1148,12 @@ html, body {
   background: rgba(0, 0, 0, 0.12);
 }
 
-/* The type select, unwrap and delete controls share one rule: visible while
-   the pointer is over the callout or the caret is editing inside it. */
+/* The type select, unwrap and delete controls share one rule, the same one the
+   image buttons use: visible only while the pointer is over the callout (not
+   while merely focused, or they'd stay behind after the mouse moves away). */
 .block-callout:hover .block-callout-kind-select,
 .block-callout:hover .block-callout-delete,
-.block-callout:hover .block-callout-unwrap,
-.block-callout:focus-within .block-callout-kind-select,
-.block-callout:focus-within .block-callout-delete,
-.block-callout:focus-within .block-callout-unwrap {
+.block-callout:hover .block-callout-unwrap {
   opacity: 1;
 }
 
