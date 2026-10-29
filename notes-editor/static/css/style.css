@@ -1081,6 +1081,22 @@ html, body {
   margin-left: 24px;
 }
 
+/* No header (no icon, no label): the body starts at the box's left padding
+   instead of lining up under the title. */
+.block-callout-no-header .block-callout-text {
+  margin-left: 0;
+}
+
+/* Without a header row the top-right controls would sit on top of the first
+   line of text, so they straddle the box's top edge instead. */
+.block-callout-no-header .block-callout-kind-select,
+.block-callout-no-header .block-callout-delete {
+  top: -12px;
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+}
+
 .block-callout-title {
   font-weight: 600;
   font-size: 14px;

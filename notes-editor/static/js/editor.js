@@ -1933,7 +1933,15 @@ window.NotesEditor = (function () {
     });
     header.appendChild(titleEl);
 
-    wrap.appendChild(header);
+    // A flat callout shows just its content (colored box, no icon or label)
+    // unless the file gave it a custom title (`::: note My title`); a custom
+    // title can only be set from the raw-source view. "details" always needs
+    // its header: that's the collapse handle.
+    if (isDetails || block.calloutTitle) {
+      wrap.appendChild(header);
+    } else {
+      wrap.classList.add('block-callout-no-header');
+    }
 
     var text;
     if (isDetails) {
