@@ -502,39 +502,68 @@ window.NotesEditor = (function () {
     }
     lastFocusedBlockId = target._id;
     setTimeout(function () {
-      var textEl = container.querySelector('[data-id="' + target._id + '"] .block-text');
+      var blockEl = container.querySelector('[data-id="' + target._id + '"]');
+      if (!blockEl) {
+        return;
+      }
+      if (target.type === 'code_block') {
+        var textarea = blockEl.querySelector('.block-code-textarea');
+        if (textarea) {
+          textarea.focus();
+          var pos = Math.min(caret.offset, textarea.value.length);
+          textarea.setSelectionRange(pos, pos);
+        }
+        return;
+      }
+      if (target.type === 'table' && caret.row !== undefined) {
+        var tr = blockEl.querySelectorAll('tbody > tr')[caret.row];
+        var cell = tr && tr.querySelector('[data-col="' + caret.col + '"]');
+        if (cell) {
+          cell.focus();
+          if (cell.tagName !== 'INPUT') {
+            setCaretInText(cell, caret.offset);
+          }
+          return;
+        }
+      }
+      var textEl = blockEl.querySelector('.block-text');
       if (!textEl) {
         focusBlockSmart(target._id, false);
         return;
       }
       textEl.focus();
-      var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null);
-      var remaining = caret.offset;
-      var node = walker.nextNode();
-      var lastNode = null;
-      while (node) {
-        lastNode = node;
-        if (remaining <= node.nodeValue.length) {
-          break;
-        }
-        remaining -= node.nodeValue.length;
-        node = walker.nextNode();
-      }
-      var range = document.createRange();
-      if (node) {
-        range.setStart(node, remaining);
-      } else if (lastNode) {
-        range.setStart(lastNode, lastNode.nodeValue.length);
-      } else {
-        range.selectNodeContents(textEl);
-        range.collapse(true);
-      }
-      range.collapse(true);
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
+      setCaretInText(textEl, caret.offset);
     }, 0);
     return true;
+  }
+
+  // Puts a collapsed caret `offset` characters into the visible text of `textEl`.
+  function setCaretInText(textEl, offset) {
+    var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null);
+    var remaining = offset;
+    var node = walker.nextNode();
+    var lastNode = null;
+    while (node) {
+      lastNode = node;
+      if (remaining <= node.nodeValue.length) {
+        break;
+      }
+      remaining -= node.nodeValue.length;
+      node = walker.nextNode();
+    }
+    var range = document.createRange();
+    if (node) {
+      range.setStart(node, remaining);
+    } else if (lastNode) {
+      range.setStart(lastNode, lastNode.nodeValue.length);
+    } else {
+      range.selectNodeContents(textEl);
+      range.collapse(true);
+    }
+    range.collapse(true);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
   function resetHistory() {
@@ -598,6 +627,53 @@ window.NotesEditor = (function () {
     return div.textContent.length;
   }
 
+  // Index in `after` where the edit that turned `before` into `after` ends
+  // (common prefix/suffix trimmed): just past re-inserted text, or the point
+  // where text was removed.
+  function changedRegionEnd(before, after) {
+    var limit = Math.min(before.length, after.length);
+    var prefix = 0;
+    while (prefix < limit && before.charAt(prefix) === after.charAt(prefix)) {
+      prefix += 1;
+    }
+    var suffix = 0;
+    while (suffix < limit - prefix &&
+           before.charAt(before.length - 1 - suffix) === after.charAt(after.length - 1 - suffix)) {
+      suffix += 1;
+    }
+    return after.length - suffix;
+  }
+
+  // The first table cell that differs (row-major), with the caret placed at the
+  // end of the changed text inside it.
+  function diffTableCaret(entry, oldTable) {
+    var newRows = entry.node.rows || [];
+    var oldRows = oldTable ? (oldTable.rows || []) : [];
+    for (var r = 0; r < newRows.length; r++) {
+      if (JSON.stringify(newRows[r]) === JSON.stringify(oldRows[r])) {
+        continue;
+      }
+      var newRow = newRows[r];
+      var oldRow = oldRows[r] || [];
+      for (var c = 0; c < newRow.length; c++) {
+        if (newRow[c] !== oldRow[c]) {
+          var cell = newRow[c] || '';
+          var end = changedRegionEnd(oldRow[c] || '', cell);
+          return { path: entry.path, row: r, col: c, offset: visibleTextLength(cell.slice(0, end)) };
+        }
+      }
+      // Same cells but a different shape (a column or row was added/removed):
+      // land at the end of this row's last cell.
+      var lastCol = Math.max(newRow.length - 1, 0);
+      return { path: entry.path, row: r, col: lastCol, offset: visibleTextLength(newRow[lastCol] || '') };
+    }
+    // Rows were removed from the end: land in the last remaining row.
+    var lastRow = Math.max(newRows.length - 1, 0);
+    var lastRowCells = newRows[lastRow] || [];
+    var col = Math.max(lastRowCells.length - 1, 0);
+    return { path: entry.path, row: lastRow, col: col, offset: visibleTextLength(lastRowCells[col] || '') };
+  }
+
   // Where the caret should land after swapping oldSnap for newSnap: the first
   // block that differs, and within its text the end of the changed region
   // (i.e. just after re-inserted text on redo, at the removal point on undo).
@@ -626,6 +702,17 @@ window.NotesEditor = (function () {
       return { path: prev.path, offset: visibleTextLength(prev.node.text || '') };
     }
     var entry = newFlat[Math.min(i, newFlat.length - 1)];
+    var oldAtI = i < oldFlat.length ? oldFlat[i].node : null;
+    if (entry.node.type === 'table') {
+      return diffTableCaret(entry, oldAtI && oldAtI.type === 'table' ? oldAtI : null);
+    }
+    if (entry.node.type === 'code_block') {
+      // The code block's text is raw (shown verbatim in a textarea), so the
+      // offset is a plain character index rather than a rendered-text length.
+      var codeAfter = entry.node.text || '';
+      var codeBefore = oldAtI && oldAtI.type === 'code_block' ? (oldAtI.text || '') : '';
+      return { path: entry.path, offset: changedRegionEnd(codeBefore, codeAfter) };
+    }
     var after = entry.node.text || '';
     var offset = after.length;
     if (i < oldFlat.length && i < newFlat.length && oldFlat[i].node.type === entry.node.type) {
