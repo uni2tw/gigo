@@ -263,7 +263,23 @@ window.NotesEditor = (function () {
       }
 
       var text = e.clipboardData && e.clipboardData.getData('text/plain');
-      if (!text || text.indexOf('\n') === -1) {
+      if (!text) {
+        return;
+      }
+      // A single pasted "- [x] foo" / "[ ]" line lands in an empty block as a
+      // real checklist item, like the multi-line markdown paste below does.
+      var singleChecklist = text.indexOf('\n') === -1
+        && /^\s*(?:[-*]\s*)?\[([ xX]?)\](?:\s+(.*))?$/.exec(text.trim());
+      if (singleChecklist && NON_TEXT_TYPES.indexOf(block.type) === -1 && !block.text
+        && (!block.children || !block.children.length)) {
+        e.preventDefault();
+        pasteBlocksAt(block, [{
+          type: 'checklist_item', text: singleChecklist[2] || '', level: 0, children: [],
+          checked: /x/i.test(singleChecklist[1]), _id: nextId(),
+        }], textEl);
+        return;
+      }
+      if (text.indexOf('\n') === -1) {
         return;
       }
       var parsedBlocks = window.NotesMarkdown.parseMarkdownToBlocks(text);
