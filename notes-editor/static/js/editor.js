@@ -1202,6 +1202,32 @@ window.NotesEditor = (function () {
     });
     wrap.appendChild(trailingEl);
 
+    // A drag that starts inside the label is confined by the browser to that
+    // contentEditable span, so it can never reach the checkbox on its left.
+    // While the pointer is left of the label, extend the selection to the
+    // start of the cell ourselves so the box counts as selected.
+    trailingEl.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) {
+        return;
+      }
+      var anchor = null;
+      function onMove(ev) {
+        var sel = window.getSelection();
+        if (!anchor && sel.anchorNode && trailingEl.contains(sel.anchorNode)) {
+          anchor = { node: sel.anchorNode, offset: sel.anchorOffset };
+        }
+        if (anchor && ev.clientX < trailingEl.getBoundingClientRect().left) {
+          sel.setBaseAndExtent(anchor.node, anchor.offset, wrap, 0);
+        }
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
     checkbox.addEventListener('click', function (e) {
       e.stopPropagation();
       var currentTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
@@ -1284,9 +1310,13 @@ window.NotesEditor = (function () {
           text.contentEditable = 'true';
           text.dataset.col = String(colIndex);
           text.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(cellText);
-          text.addEventListener('input', function () {
+          text.addEventListener('input', function (ev) {
             var newText = window.NotesMarkdown.htmlToInlineMarkdown(text);
-            var liveMatch = TABLE_CELL_CHECKBOX_LIVE_RE.exec(newText);
+            // Typing needs the trailing space as the "done typing the marker"
+            // signal; a paste is already complete, so "[ ]" alone qualifies.
+            var liveMatch = ev && ev.inputType === 'insertFromPaste'
+              ? TABLE_CELL_CHECKBOX_RE.exec(newText.trim())
+              : TABLE_CELL_CHECKBOX_LIVE_RE.exec(newText);
             if (liveMatch) {
               var liveTrailing = liveMatch[2];
               block.rows[rowIndex][colIndex] = '- [' + (/x/i.test(liveMatch[1]) ? 'x' : ' ') + ']' + (liveTrailing ? ' ' + liveTrailing : '');
