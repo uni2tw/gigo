@@ -503,6 +503,10 @@ html, body {
   min-height: 1.2em;
 }
 
+.block-table .cell-selected {
+  background: rgba(64, 140, 255, 0.18);
+}
+
 .block-table-checkbox-cell {
   display: flex;
   align-items: center;

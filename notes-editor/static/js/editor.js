@@ -225,6 +225,7 @@ window.NotesEditor = (function () {
       }
     });
 
+    document.addEventListener('selectionchange', updateTableCellSelection);
     container.addEventListener('copy', handleCopy);
     container.addEventListener('cut', handleCut);
 
@@ -3226,6 +3227,71 @@ window.NotesEditor = (function () {
   // is polluted with per-block UI chrome (format menu, collapse toggle, ...).
   // For a selection that spans more than one block, build a clean plain-text
   // clipboard payload ourselves instead of letting the browser serialize it.
+  // The cells of a table touched by the current selection, when it spans two
+  // or more of them. Returns the rectangle they cover (row/col indexes into
+  // block.rows) plus the DOM cells, or null for a selection inside one cell.
+  function getTableCellSelection() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) {
+      return null;
+    }
+    var range = sel.getRangeAt(0);
+    var startEl = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+    var endEl = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer : range.endContainer.parentElement;
+    var table = startEl && startEl.closest('table.block-table');
+    if (!table || !container.contains(table) || !endEl || endEl.closest('table.block-table') !== table) {
+      return null;
+    }
+    var rowEl = table.closest('[data-id]');
+    var block = rowEl && findBlock(blocks, rowEl.dataset.id);
+    if (!block || block.type !== 'table') {
+      return null;
+    }
+    var cells = [];
+    var boxSelected = false;
+    var r0 = Infinity, r1 = -1, c0 = Infinity, c1 = -1;
+    var colCount = block.rows[0] ? block.rows[0].length : 0;
+    Array.prototype.forEach.call(table.querySelectorAll('tbody > tr'), function (tr, r) {
+      if (r >= block.rows.length) {
+        return;
+      }
+      Array.prototype.forEach.call(tr.children, function (cell, idx) {
+        var c = idx - 1;
+        if (c < 0 || c >= colCount || !range.intersectsNode(cell)) {
+          return;
+        }
+        // Inside a single cell only a checkbox cell whose box itself is swept
+        // up counts: a native checkbox never paints a selection highlight and
+        // is dropped from a native copy, so it needs this explicit handling.
+        var box = cell.querySelector('input[type="checkbox"]');
+        if (box && range.intersectsNode(box)) {
+          boxSelected = true;
+        }
+        cells.push(cell);
+        r0 = Math.min(r0, r);
+        r1 = Math.max(r1, r);
+        c0 = Math.min(c0, c);
+        c1 = Math.max(c1, c);
+      });
+    });
+    if (cells.length < 2 && !(cells.length === 1 && boxSelected)) {
+      return null;
+    }
+    return { block: block, cells: cells, r0: r0, r1: r1, c0: c0, c1: c1 };
+  }
+
+  function updateTableCellSelection() {
+    Array.prototype.forEach.call(container.querySelectorAll('.cell-selected'), function (el) {
+      el.classList.remove('cell-selected');
+    });
+    var info = getTableCellSelection();
+    if (info) {
+      info.cells.forEach(function (cell) {
+        cell.classList.add('cell-selected');
+      });
+    }
+  }
+
   function handleCopy(e) {
     if (blockSelectionRange) {
       var blockSelText = getBlockSelectionMarkdown();
@@ -3233,6 +3299,24 @@ window.NotesEditor = (function () {
         e.clipboardData.setData('text/plain', blockSelText);
         e.preventDefault();
       }
+      return;
+    }
+    var tableSel = getTableCellSelection();
+    if (tableSel && tableSel.cells.length === 1) {
+      e.clipboardData.setData('text/plain', tableSel.block.rows[tableSel.r0][tableSel.c0]);
+      e.preventDefault();
+      return;
+    }
+    if (tableSel) {
+      var slice = {
+        type: 'table',
+        rows: tableSel.block.rows.slice(tableSel.r0, tableSel.r1 + 1).map(function (cells) {
+          return cells.slice(tableSel.c0, tableSel.c1 + 1);
+        }),
+        align: (tableSel.block.align || []).slice(tableSel.c0, tableSel.c1 + 1)
+      };
+      e.clipboardData.setData('text/plain', window.NotesMarkdown.blocksToMarkdown([slice]).replace(/\n+$/, ''));
+      e.preventDefault();
       return;
     }
     var sel = window.getSelection();
