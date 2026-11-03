@@ -3403,6 +3403,21 @@ window.NotesEditor = (function () {
   // cut behavior, same scope as handleCopy above.
   function handleCut(e) {
     if (!blockSelectionRange) {
+      var tableSel = getTableCellSelection();
+      if (!tableSel) {
+        return;
+      }
+      // A native cut can't remove a checkbox (or cross cell boundaries), so
+      // cut = the same text copy produces, then blank every covered cell.
+      handleCopy(e);
+      for (var r = tableSel.r0; r <= tableSel.r1; r++) {
+        for (var c = tableSel.c0; c <= tableSel.c1; c++) {
+          tableSel.block.rows[r][c] = '';
+        }
+      }
+      render();
+      focusTableCell(tableSel.block._id, tableSel.r0, tableSel.c0);
+      commitChange(true);
       return;
     }
     var blockSelText = getBlockSelectionMarkdown();
