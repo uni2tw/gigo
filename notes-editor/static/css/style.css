@@ -522,10 +522,18 @@ html, body {
 .block-table th {
   background: var(--hover-bg);
   font-weight: 700;
-  position: relative;
 }
 
-.block-table th,
+/* The header row stays pinned to the top of the scroll area while a long
+   table scrolls; collapsed borders don't travel with a sticky cell, so the
+   divider underneath is drawn as an inset shadow instead. */
+.block-table th {
+  position: sticky;
+  top: -56px; /* cancels #editor-pane's top padding so it pins at the very top */
+  z-index: 2;
+  box-shadow: inset 0 -1px 0 var(--sidebar-border);
+}
+
 .block-table td {
   position: relative;
 }
@@ -544,6 +552,8 @@ html, body {
 .block-table-del-col,
 .block-table-ins-row,
 .block-table-ins-col,
+.block-table-align-col,
+.block-table-del-table,
 .block-table-add-col {
   width: 18px;
   height: 18px;
@@ -586,7 +596,7 @@ html, body {
   top: 2px;
   left: 50%;
   transform: translateX(-50%);
-  width: 44px;
+  width: 62px;
   height: 18px;
   gap: 2px;
 }
@@ -608,7 +618,7 @@ html, body {
 }
 
 .block-table-col-btns .block-table-dot {
-  left: 12px;
+  left: 11px;
   top: 50%;
 }
 
@@ -638,8 +648,54 @@ html, body {
 .block-table-del-col:hover,
 .block-table-ins-row:hover,
 .block-table-ins-col:hover,
+.block-table-align-col:hover,
+.block-table-del-table:hover,
 .block-table-add-col:hover {
   background: var(--sidebar-border);
+}
+
+.block-table-align-col {
+  padding: 0;
+  line-height: 0;
+}
+
+.block-table-align-col.is-default {
+  opacity: 0.45;
+}
+
+/* Header corner: a dot hints at the delete-whole-table button. */
+.block-table-corner-btns {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 100%;
+  min-height: 29px;
+  margin: 0 auto;
+}
+
+.block-table-corner-btns .block-table-dot {
+  left: 50%;
+  top: 50%;
+}
+
+.block-table-corner-btns .block-table-del-table {
+  display: none;
+  padding: 0;
+  line-height: 0;
+}
+
+.block-table-corner-btns:hover .block-table-dot {
+  display: none;
+}
+
+.block-table-corner-btns:hover .block-table-del-table {
+  display: block;
+}
+
+.block-table-del-table:hover {
+  color: #d64545;
 }
 
 .block-table-add-row-cell {

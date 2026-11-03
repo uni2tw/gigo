@@ -1081,6 +1081,45 @@ window.NotesEditor = (function () {
     commitChange(true);
   }
 
+  // GFM keeps one alignment per column; null is the unmarked "---" default.
+  var TABLE_ALIGN_CYCLE = [null, 'left', 'center', 'right'];
+  var TABLE_ALIGN_LABELS = { left: '靠左', center: '置中', right: '靠右' };
+
+  function nextTableAlign(current) {
+    var idx = TABLE_ALIGN_CYCLE.indexOf(current || null);
+    return TABLE_ALIGN_CYCLE[(idx + 1) % TABLE_ALIGN_CYCLE.length];
+  }
+
+  function cycleTableColumnAlign(block, colIndex) {
+    block.align = block.align || [];
+    while (block.align.length < (block.rows[0] ? block.rows[0].length : 0)) {
+      block.align.push(null);
+    }
+    block.align[colIndex] = nextTableAlign(block.align[colIndex]);
+    render();
+    commitChange(true);
+  }
+
+  // Four text lines drawn flush left / centered / flush right, so the icon
+  // itself shows the column's current alignment.
+  function createTableAlignIcon(align) {
+    var kind = align || 'left';
+    var spans = [[2, 12], [2, 8], [2, 12], [2, 8]];
+    var lines = spans.map(function (s, i) {
+      var len = s[1] - s[0];
+      var x1 = s[0];
+      if (kind === 'center') {
+        x1 = (14 - len) / 2;
+      } else if (kind === 'right') {
+        x1 = 14 - s[0] - len;
+      }
+      var y = 2.5 + i * 3;
+      return '<line x1="' + x1 + '" y1="' + y + '" x2="' + (x1 + len) + '" y2="' + y + '"/>';
+    });
+    return '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" '
+      + 'stroke-width="1.4" stroke-linecap="round">' + lines.join('') + '</svg>';
+  }
+
   function focusTableCell(blockId, rowIndex, colIndex, atStart) {
     setTimeout(function () {
       var rowEl = container.querySelector('[data-id="' + blockId + '"]');
@@ -1231,6 +1270,7 @@ window.NotesEditor = (function () {
     var trailingEl = document.createElement('span');
     trailingEl.className = 'block-table-cell-text';
     trailingEl.contentEditable = 'true';
+    trailingEl.dataset.col = String(colIndex);
     trailingEl.innerHTML = window.NotesMarkdown.inlineMarkdownToHtml(trailing);
     trailingEl.addEventListener('input', function () {
       var newTrailing = window.NotesMarkdown.htmlToInlineMarkdown(trailingEl);
@@ -1341,6 +1381,25 @@ window.NotesEditor = (function () {
         });
         rowBtns.appendChild(delRowBtn);
         cornerCell.appendChild(rowBtns);
+      } else {
+        var cornerBtns = document.createElement('div');
+        cornerBtns.className = 'block-table-corner-btns';
+        cornerBtns.appendChild(createTableDot());
+
+        var delTableBtn = document.createElement('button');
+        delTableBtn.type = 'button';
+        delTableBtn.className = 'block-table-del-table';
+        delTableBtn.title = '刪除整張表格';
+        delTableBtn.innerHTML = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" '
+          + 'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M2 3.5h10M5.5 3.5V2h3v1.5M3.5 3.5l.6 8h5.8l.6-8M5.8 6v3.5M8.2 6v3.5"/></svg>';
+        delTableBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          removeBlock(block._id);
+          commitChange(true);
+        });
+        cornerBtns.appendChild(delTableBtn);
+        cornerCell.appendChild(cornerBtns);
       }
       tr.appendChild(cornerCell);
 
@@ -1400,6 +1459,19 @@ window.NotesEditor = (function () {
           });
           colBtns.appendChild(insColBtn);
           cell.appendChild(colBtns);
+
+          var alignBtn = document.createElement('button');
+          alignBtn.type = 'button';
+          alignBtn.className = 'block-table-align-col' + (align ? '' : ' is-default');
+          var nextAlign = nextTableAlign(align);
+          alignBtn.title = '對齊：' + (align ? TABLE_ALIGN_LABELS[align] : '預設')
+            + '（點擊改為' + (nextAlign ? TABLE_ALIGN_LABELS[nextAlign] : '預設') + '）';
+          alignBtn.innerHTML = createTableAlignIcon(align);
+          alignBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            cycleTableColumnAlign(block, colIndex);
+          });
+          colBtns.appendChild(alignBtn);
 
           var delColBtn = document.createElement('button');
           delColBtn.type = 'button';
@@ -4353,7 +4425,7 @@ window.NotesEditor = (function () {
     var marks = container.querySelectorAll('span.search-match, span.search-match-current');
     var affectedTextEls = [];
     Array.prototype.forEach.call(marks, function (mark) {
-      var textEl = mark.closest('.block-text');
+      var textEl = mark.closest('.block-text, .block-table-cell-text');
       unwrapElement(mark);
       if (textEl && affectedTextEls.indexOf(textEl) === -1) {
         affectedTextEls.push(textEl);
@@ -4389,24 +4461,56 @@ window.NotesEditor = (function () {
     return null;
   }
 
+  // The editable element holding a search match: the block's own text, or for
+  // a table match the text span of that row/column cell.
+  function getSearchMatchTextEl(match) {
+    var rowEl = container.querySelector('[data-id="' + match.blockId + '"]');
+    if (!rowEl) {
+      return null;
+    }
+    if (match.kind !== 'cell') {
+      return rowEl.querySelector('.block-text');
+    }
+    var tr = rowEl.querySelectorAll('tbody > tr')[match.row];
+    return tr ? tr.querySelector('.block-table-cell-text[data-col="' + match.col + '"]') : null;
+  }
+
+  function searchMatchGroupKey(match) {
+    return match.kind === 'cell'
+      ? match.blockId + '|' + match.row + '|' + match.col
+      : match.blockId;
+  }
+
+  // A cell's markdown is rebuilt from its (possibly edited) text element; a
+  // checkbox cell keeps its box state in front of the label text.
+  function syncTableCellFromEl(block, row, col, textEl) {
+    var text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+    var checkbox = textEl.parentNode && textEl.parentNode.classList.contains('block-table-checkbox-cell')
+      ? textEl.parentNode.querySelector('input[type="checkbox"]')
+      : null;
+    block.rows[row][col] = checkbox
+      ? '- [' + (checkbox.checked ? 'x' : ' ') + ']' + (text ? ' ' + text : '')
+      : text;
+  }
+
   function highlightSearchMatches() {
-    var byBlock = {};
+    var groups = {};
     searchMatches.forEach(function (m, idx) {
       if (m.kind === 'code') {
         return;
       }
-      byBlock[m.blockId] = byBlock[m.blockId] || [];
-      byBlock[m.blockId].push(idx);
+      var key = searchMatchGroupKey(m);
+      groups[key] = groups[key] || [];
+      groups[key].push(idx);
     });
-    Object.keys(byBlock).forEach(function (blockId) {
-      var rowEl = container.querySelector('[data-id="' + blockId + '"]');
-      var textEl = rowEl && rowEl.querySelector('.block-text');
+    Object.keys(groups).forEach(function (key) {
+      var idxs = groups[key].slice().sort(function (a, b) {
+        return searchMatches[b].start - searchMatches[a].start;
+      });
+      var textEl = getSearchMatchTextEl(searchMatches[idxs[0]]);
       if (!textEl) {
         return;
       }
-      var idxs = byBlock[blockId].slice().sort(function (a, b) {
-        return searchMatches[b].start - searchMatches[a].start;
-      });
       idxs.forEach(function (idx) {
         var m = searchMatches[idx];
         var range = rangeFromTextOffsets(textEl, m.start, m.end);
@@ -4465,8 +4569,10 @@ window.NotesEditor = (function () {
     highlightSearchMatches();
     updateSearchCountDisplay();
     var rowEl = container.querySelector('[data-id="' + match.blockId + '"]');
-    if (rowEl) {
-      rowEl.scrollIntoView({ block: 'center' });
+    // A table is often taller than the viewport, so centre the matching cell.
+    var scrollTarget = (match.kind === 'cell' && getSearchMatchTextEl(match)) || rowEl;
+    if (scrollTarget) {
+      scrollTarget.scrollIntoView({ block: 'center' });
     }
     if (match.kind === 'code' && rowEl) {
       var textarea = rowEl.querySelector('.block-code-textarea');
@@ -4513,6 +4619,19 @@ window.NotesEditor = (function () {
           searchMatches.push({ blockId: blockId, start: m.start, end: m.end, kind: 'code' });
         });
       }
+      if (rowEl.classList.contains('block-table-row')) {
+        var trs = rowEl.querySelectorAll('tbody > tr');
+        Array.prototype.forEach.call(rowEl.querySelectorAll('.block-table-cell-text'), function (cellEl) {
+          var tr = cellEl.closest('tr');
+          var rowIndex = Array.prototype.indexOf.call(trs, tr);
+          findMatchesInText(cellEl.textContent, regex).forEach(function (m) {
+            searchMatches.push({
+              blockId: blockId, start: m.start, end: m.end, kind: 'cell',
+              row: rowIndex, col: Number(cellEl.dataset.col),
+            });
+          });
+        });
+      }
     });
 
     if (!searchMatches.length) {
@@ -4544,7 +4663,7 @@ window.NotesEditor = (function () {
       block.text = textarea.value;
       autoGrowTextarea(textarea);
     } else {
-      var textEl = rowEl.querySelector('.block-text');
+      var textEl = getSearchMatchTextEl(match);
       if (!textEl) {
         return;
       }
@@ -4557,7 +4676,11 @@ window.NotesEditor = (function () {
         range.insertNode(document.createTextNode(replacement));
       }
       textEl.normalize();
-      block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+      if (match.kind === 'cell') {
+        syncTableCellFromEl(block, match.row, match.col, textEl);
+      } else {
+        block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
+      }
     }
     commitChange(true);
     runSearch();
@@ -4599,12 +4722,11 @@ window.NotesEditor = (function () {
         autoGrowTextarea(textarea);
         return;
       }
+      var touchedCells = {};
       var textEl = rowEl.querySelector('.block-text');
-      if (!textEl) {
-        return;
-      }
       ms.forEach(function (m) {
-        var range = rangeFromTextOffsets(textEl, m.start, m.end);
+        var el = m.kind === 'cell' ? getSearchMatchTextEl(m) : textEl;
+        var range = el && rangeFromTextOffsets(el, m.start, m.end);
         if (!range) {
           return;
         }
@@ -4612,7 +4734,21 @@ window.NotesEditor = (function () {
         if (replacement) {
           range.insertNode(document.createTextNode(replacement));
         }
+        if (m.kind === 'cell') {
+          touchedCells[m.row + '|' + m.col] = { row: m.row, col: m.col, el: el };
+        }
       });
+      if (ms[0].kind === 'cell') {
+        Object.keys(touchedCells).forEach(function (k) {
+          var t = touchedCells[k];
+          t.el.normalize();
+          syncTableCellFromEl(block, t.row, t.col, t.el);
+        });
+        return;
+      }
+      if (!textEl) {
+        return;
+      }
       textEl.normalize();
       block.text = window.NotesMarkdown.htmlToInlineMarkdown(textEl);
     });
