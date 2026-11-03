@@ -900,11 +900,29 @@ window.NotesEditor = (function () {
     }
   }
 
+  function getScrollParent(el) {
+    for (var p = el.parentElement; p; p = p.parentElement) {
+      var overflowY = window.getComputedStyle(p).overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && p.scrollHeight > p.clientHeight) {
+        return p;
+      }
+    }
+    return document.scrollingElement;
+  }
+
+  // Rebuilding the whole tree empties the container for a moment, which can
+  // clamp the scroll position of the pane that holds it; put it back so a
+  // re-render never moves the viewport by itself.
   function render() {
+    var scroller = getScrollParent(container);
+    var scrollTop = scroller ? scroller.scrollTop : 0;
     ensureTrailingParagraph();
     openDropdown = null;
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
+    if (scroller && scroller.scrollTop !== scrollTop) {
+      scroller.scrollTop = scrollTop;
+    }
   }
 
   function ensureTrailingParagraph() {
@@ -1142,7 +1160,9 @@ window.NotesEditor = (function () {
       var label = checkbox && checkbox.closest('.block-table-checkbox-cell');
       var trailingEl = label && label.querySelector('.block-table-cell-text');
       if (trailingEl) {
-        trailingEl.focus();
+        // The cell is where the user just pasted/typed, so it is already in
+        // view; letting focus() scroll could only move the viewport away.
+        trailingEl.focus({ preventScroll: true });
       }
     }, 0);
   }
