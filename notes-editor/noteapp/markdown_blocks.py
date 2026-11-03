@@ -53,9 +53,11 @@ def _split_table_row(line):
     stripped = line.strip()
     if stripped.startswith('|'):
         stripped = stripped[1:]
-    if stripped.endswith('|'):
+    if stripped.endswith('|') and not stripped.endswith('\\|'):
         stripped = stripped[:-1]
-    return [_BR_RE.sub('\n', cell.strip()) for cell in stripped.split('|')]
+    # "\|" is an escaped pipe inside a cell, not a column boundary.
+    return [_BR_RE.sub('\n', cell.strip()).replace('\\|', '|')
+            for cell in re.split(r'(?<!\\)\|', stripped)]
 
 
 def _join_wrapped_table_row(lines, start):
@@ -344,7 +346,7 @@ def _list_item_lines(prefix_indent, marker, text):
 
 
 def _format_table_row(cells):
-    return '| ' + ' | '.join(c.replace('\r\n', '\n').replace('\n', '<br>') for c in cells) + ' |'
+    return '| ' + ' | '.join(c.replace('|', '\\|').replace('\r\n', '\n').replace('\n', '<br>') for c in cells) + ' |'
 
 
 def _format_table_separator(align, col_count):

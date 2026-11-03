@@ -157,6 +157,12 @@ class MarkdownBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[0].rows[1], ['x\ny', 'z'])
         self.assertEqual(blocks_to_markdown(blocks).strip(), md)
 
+    def test_table_cell_escaped_pipe_round_trips(self):
+        md = '| a | b |\n| --- | --- |\n| x\\|y | z |'
+        blocks = parse_markdown_to_blocks(md)
+        self.assertEqual(blocks[0].rows[1], ['x|y', 'z'])
+        self.assertEqual(blocks_to_markdown(blocks).strip(), md)
+
     def test_details_open_flag_round_trip(self):
         for md, is_open, title in [
             ('::: details open Title\nx\n:::', True, 'Title'),

@@ -65,11 +65,12 @@ window.NotesMarkdown = (function () {
     if (stripped.charAt(0) === '|') {
       stripped = stripped.slice(1);
     }
-    if (stripped.charAt(stripped.length - 1) === '|') {
+    if (stripped.charAt(stripped.length - 1) === '|' && stripped.slice(-2) !== '\\|') {
       stripped = stripped.slice(0, -1);
     }
-    return stripped.split('|').map(function (cell) {
-      return cell.trim().replace(/<br\s*\/?>/gi, '\n');
+    // "\|" is an escaped pipe inside a cell, not a column boundary.
+    return stripped.split(/(?<!\\)\|/).map(function (cell) {
+      return cell.trim().replace(/<br\s*\/?>/gi, '\n').replace(/\\\|/g, '|');
     });
   }
 
@@ -382,7 +383,7 @@ window.NotesMarkdown = (function () {
 
   function formatTableRow(cells) {
     return '| ' + cells.map(function (c) {
-      return c.replace(/\r?\n/g, '<br>');
+      return c.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
     }).join(' | ') + ' |';
   }
 

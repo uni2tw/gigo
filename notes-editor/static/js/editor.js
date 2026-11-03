@@ -1148,7 +1148,58 @@ window.NotesEditor = (function () {
     }, 0);
   }
 
+  // Swaps a data row with its neighbour; the header row never moves and
+  // nothing moves into it.
+  function moveTableRow(block, rowIndex, colIndex, delta) {
+    var target = rowIndex + delta;
+    if (rowIndex < 1 || target < 1 || target >= block.rows.length) {
+      return;
+    }
+    var moved = block.rows[rowIndex];
+    block.rows[rowIndex] = block.rows[target];
+    block.rows[target] = moved;
+    render();
+    focusTableCell(block._id, target, colIndex);
+    commitChange(true);
+  }
+
+  // Swaps a whole column (header included) with its neighbour; the column's
+  // alignment travels with it.
+  function moveTableColumn(block, rowIndex, colIndex, delta) {
+    var colCount = block.rows[0] ? block.rows[0].length : 0;
+    var target = colIndex + delta;
+    if (target < 0 || target >= colCount) {
+      return;
+    }
+    block.rows.forEach(function (r) {
+      var moved = r[colIndex];
+      r[colIndex] = r[target];
+      r[target] = moved;
+    });
+    block.align = block.align || [];
+    while (block.align.length < colCount) {
+      block.align.push(null);
+    }
+    var movedAlign = block.align[colIndex];
+    block.align[colIndex] = block.align[target];
+    block.align[target] = movedAlign;
+    render();
+    focusTableCell(block._id, rowIndex, target);
+    commitChange(true);
+  }
+
   function handleTableCellKeydown(e, block, rowIndex, colIndex) {
+    // Alt+Arrow moves the current row (up/down) or column (left/right).
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
+      && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1) {
+      e.preventDefault();
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        moveTableRow(block, rowIndex, colIndex, e.key === 'ArrowUp' ? -1 : 1);
+      } else {
+        moveTableColumn(block, rowIndex, colIndex, e.key === 'ArrowLeft' ? -1 : 1);
+      }
+      return;
+    }
     if (e.key === 'ArrowUp') {
       if (rowIndex > 0) {
         e.preventDefault();
