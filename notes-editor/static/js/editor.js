@@ -916,12 +916,26 @@ window.NotesEditor = (function () {
   function render() {
     var scroller = getScrollParent(container);
     var scrollTop = scroller ? scroller.scrollTop : 0;
+    var wasEditing = container.contains(document.activeElement);
     ensureTrailingParagraph();
     openDropdown = null;
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
     if (scroller && scroller.scrollTop !== scrollTop) {
       scroller.scrollTop = scrollTop;
+    }
+    // When this runs from inside an editing event (paste, typing), the
+    // browser reveals the caret once the event returns -- but the caret's
+    // element was just thrown away, so it "reveals" the start of the editor
+    // and yanks the viewport there. Put the viewport back after that has
+    // happened; the callers' own focusBlock()/focus timers are queued after
+    // this one, so any deliberate scroll to a new caret still wins.
+    if (scroller && wasEditing) {
+      setTimeout(function () {
+        if (scroller.scrollTop !== scrollTop) {
+          scroller.scrollTop = scrollTop;
+        }
+      }, 0);
     }
   }
 
