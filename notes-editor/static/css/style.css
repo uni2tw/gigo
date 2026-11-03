@@ -519,6 +519,22 @@ html, body {
   cursor: text;
 }
 
+/* Centered / right-aligned columns: the box and its label travel together, so
+   the label shrinks to its text (with room left to click into when empty). */
+.block-table-checkbox-cell.align-center {
+  justify-content: center;
+}
+
+.block-table-checkbox-cell.align-right {
+  justify-content: flex-end;
+}
+
+.block-table-checkbox-cell.align-center .block-table-cell-text,
+.block-table-checkbox-cell.align-right .block-table-cell-text {
+  flex: 0 1 auto;
+  min-width: 1em;
+}
+
 .block-table th {
   background: var(--hover-bg);
   font-weight: 700;

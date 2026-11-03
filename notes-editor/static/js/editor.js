@@ -1253,6 +1253,12 @@ window.NotesEditor = (function () {
   function renderTableCellCheckbox(block, rowIndex, colIndex, match) {
     var wrap = document.createElement('div');
     wrap.className = 'block-table-checkbox-cell';
+    // The wrapper is a flex row, which text-align can't move: the column's
+    // alignment has to steer the row's justify-content instead.
+    var columnAlign = block.align && block.align[colIndex];
+    if (columnAlign === 'center' || columnAlign === 'right') {
+      wrap.classList.add('align-' + columnAlign);
+    }
     wrap.addEventListener('click', function (e) {
       if (e.target === wrap) {
         trailingEl.focus();
