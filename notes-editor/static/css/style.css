@@ -545,9 +545,32 @@ html, body {
    divider underneath is drawn as an inset shadow instead. */
 .block-table th {
   position: sticky;
-  top: -56px; /* cancels #editor-pane's top padding so it pins at the very top */
+  top: -40px; /* -56px cancels #editor-pane's top padding; +16px for the control strip above */
   z-index: 2;
   box-shadow: inset 0 -1px 0 var(--sidebar-border);
+}
+
+/* Column controls live in a thin strip above the header so they never cover
+   the header text. It pins above the header, and widens the hovered column's
+   controls over its neighbours (the strip holds no text to cover). */
+.block-table th.block-table-strip-cell {
+  position: sticky;
+  top: -56px;
+  z-index: 3;
+  height: 16px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: var(--table-strip-bg, #fff);
+}
+
+.block-table th.block-table-strip-cell:hover {
+  z-index: 4;
+}
+
+.block-callout-details {
+  --table-strip-bg: #f6f8fa;
 }
 
 .block-table td {
@@ -556,8 +579,8 @@ html, body {
 
 .block-table th.block-table-control-cell,
 .block-table td.block-table-control-cell {
-  min-width: 20px;
-  width: 20px;
+  min-width: 40px;
+  width: 40px;
   padding: 0;
   text-align: center;
   border-color: transparent;
@@ -569,6 +592,8 @@ html, body {
 .block-table-ins-row,
 .block-table-ins-col,
 .block-table-align-col,
+.block-table-move-row,
+.block-table-move-col,
 .block-table-del-table,
 .block-table-add-col {
   width: 18px;
@@ -597,24 +622,39 @@ html, body {
   justify-content: center;
 }
 
-/* Two stacked buttons must still fit in a single-line row (~31px tall). */
+/* A 2x2 grid (insert / delete over move up / move down) must still fit in a
+   single-line row (~31px tall). */
 .block-table-row-btns {
   position: relative;
-  flex-direction: column;
-  gap: 1px;
-  width: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 18px);
+  grid-auto-rows: 14px;
+  gap: 1px 2px;
+  justify-content: center;
+  align-content: center;
+  width: 38px;
   height: 29px;
   margin: 0 auto;
 }
 
+/* Column controls: a dot in the strip cell; hovering the cell widens the group
+   (centred on the dot, so the pointer stays inside it) to five buttons. */
 .block-table-col-btns {
   position: absolute;
-  top: 2px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 62px;
-  height: 18px;
+  width: 18px;
+  height: 16px;
   gap: 2px;
+}
+
+.block-table-strip-cell:hover .block-table-col-btns {
+  width: 98px;
+}
+
+.block-table-col-btns button {
+  height: 16px;
 }
 
 /* The dot sits exactly where the "+" button appears on hover: top button of
@@ -629,12 +669,12 @@ html, body {
 }
 
 .block-table-row-btns .block-table-dot {
-  left: 50%;
+  left: 9px;
   top: 7px;
 }
 
 .block-table-col-btns .block-table-dot {
-  left: 11px;
+  left: 50%;
   top: 50%;
 }
 
@@ -644,19 +684,37 @@ html, body {
 }
 
 .block-table-row-btns .block-table-ins-row,
-.block-table-row-btns .block-table-del-row {
+.block-table-row-btns .block-table-del-row,
+.block-table-row-btns .block-table-move-row {
   width: 18px;
   height: 14px;
   font-size: 12px;
 }
 
+.block-table-move-row,
+.block-table-move-col {
+  padding: 0;
+  line-height: 0;
+}
+
+.block-table-move-row:disabled,
+.block-table-move-col:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.block-table-move-row:disabled:hover,
+.block-table-move-col:disabled:hover {
+  background: none;
+}
+
 .block-table-row-btns:hover .block-table-dot,
-.block-table-col-btns:hover .block-table-dot {
+.block-table-strip-cell:hover .block-table-dot {
   display: none;
 }
 
 .block-table-row-btns:hover button,
-.block-table-col-btns:hover button {
+.block-table-strip-cell:hover .block-table-col-btns button {
   display: block;
 }
 
@@ -664,6 +722,8 @@ html, body {
 .block-table-del-col:hover,
 .block-table-ins-row:hover,
 .block-table-ins-col:hover,
+.block-table-move-row:hover,
+.block-table-move-col:hover,
 .block-table-align-col:hover,
 .block-table-del-table:hover,
 .block-table-add-col:hover {

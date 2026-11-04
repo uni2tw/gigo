@@ -1120,7 +1120,10 @@ window.NotesEditor = (function () {
       + 'stroke-width="1.4" stroke-linecap="round">' + lines.join('') + '</svg>';
   }
 
-  function focusTableCell(blockId, rowIndex, colIndex, atStart) {
+  // placement ({ x, edge: 'first' | 'last' }) lands the caret on that line of
+  // the target cell at the horizontal position nearest x, instead of at the
+  // very start/end, so ArrowUp/Down keep the caret's column like in a document.
+  function focusTableCell(blockId, rowIndex, colIndex, atStart, placement) {
     setTimeout(function () {
       var rowEl = container.querySelector('[data-id="' + blockId + '"]');
       if (!rowEl) {
@@ -1142,10 +1145,57 @@ window.NotesEditor = (function () {
       var range = document.createRange();
       range.selectNodeContents(cell);
       range.collapse(!!atStart);
+      if (placement && document.caretRangeFromPoint) {
+        var cellRect = cell.getBoundingClientRect();
+        var x = Math.min(Math.max(placement.x, cellRect.left + 1), cellRect.right - 1);
+        var y = placement.edge === 'last' ? cellRect.bottom - 4 : cellRect.top + 4;
+        var placed = document.caretRangeFromPoint(x, y);
+        if (placed && cell.contains(placed.startContainer)) {
+          range = placed;
+        }
+      }
       var sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
     }, 0);
+  }
+
+  function getCaretLineInfo(sel) {
+    var rects = sel.getRangeAt(0).getClientRects();
+    var rect = rects.length && rects[0].height ? rects[0] : null;
+    return {
+      node: sel.anchorNode,
+      offset: sel.anchorOffset,
+      top: rect ? rect.top : null,
+      left: rect ? rect.left : null,
+    };
+  }
+
+  // A cell can hold several lines (soft line breaks or wrapped text), and
+  // ArrowUp/Down must walk through them before leaving the cell. Tries the
+  // browser's own line move; true if the caret really landed on another line
+  // of this cell, otherwise the caret is put back and false is returned.
+  function moveCaretLineWithinCell(textEl, forward) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || !textEl.contains(sel.anchorNode)
+      || typeof sel.modify !== 'function') {
+      return false;
+    }
+    var original = sel.getRangeAt(0).cloneRange();
+    var before = getCaretLineInfo(sel);
+    sel.modify('move', forward ? 'forward' : 'backward', 'line');
+    var moved = false;
+    if (sel.rangeCount && textEl.contains(sel.anchorNode)) {
+      var after = getCaretLineInfo(sel);
+      moved = before.top !== null && after.top !== null
+        ? Math.abs(after.top - before.top) > 2
+        : after.node !== before.node || after.offset !== before.offset;
+    }
+    if (!moved) {
+      sel.removeAllRanges();
+      sel.addRange(original);
+    }
+    return moved;
   }
 
   // Swaps a data row with its neighbour; the header row never moves and
@@ -1200,10 +1250,23 @@ window.NotesEditor = (function () {
       }
       return;
     }
+    var cellTextEl = !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target && e.target.closest
+      ? e.target.closest('.block-table-cell-text') : null;
+    var caretPlacement = null;
+    if (cellTextEl) {
+      if (moveCaretLineWithinCell(cellTextEl, e.key === 'ArrowDown')) {
+        e.preventDefault();
+        return;
+      }
+      var caretLeft = getCaretLineInfo(window.getSelection()).left;
+      if (caretLeft !== null) {
+        caretPlacement = { x: caretLeft, edge: e.key === 'ArrowDown' ? 'first' : 'last' };
+      }
+    }
     if (e.key === 'ArrowUp') {
       if (rowIndex > 0) {
         e.preventDefault();
-        focusTableCell(block._id, rowIndex - 1, colIndex);
+        focusTableCell(block._id, rowIndex - 1, colIndex, false, caretPlacement);
         return;
       }
       var ownerList = findParentList(blocks, block._id);
@@ -1219,7 +1282,7 @@ window.NotesEditor = (function () {
     if (e.key === 'ArrowDown') {
       if (rowIndex + 1 < block.rows.length) {
         e.preventDefault();
-        focusTableCell(block._id, rowIndex + 1, colIndex);
+        focusTableCell(block._id, rowIndex + 1, colIndex, false, caretPlacement);
         return;
       }
       var ownerListDown = findParentList(blocks, block._id);
@@ -1393,6 +1456,101 @@ window.NotesEditor = (function () {
     return wrap;
   }
 
+  function createTableMoveButton(className, direction, title) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.title = title;
+    var points = {
+      up: '2,6.5 5,3.5 8,6.5',
+      down: '2,3.5 5,6.5 8,3.5',
+      left: '6.5,2 3.5,5 6.5,8',
+      right: '3.5,2 6.5,5 3.5,8',
+    }[direction];
+    btn.innerHTML = '<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '
+      + 'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="' + points + '"/></svg>';
+    return btn;
+  }
+
+  // One column's controls: move left, insert left, alignment, delete, move right.
+  function createTableColumnControls(block, colIndex, colCount) {
+    var align = block.align && block.align[colIndex];
+    var colBtns = document.createElement('div');
+    colBtns.className = 'block-table-col-btns';
+    colBtns.appendChild(createTableDot());
+
+    var moveLeftBtn = createTableMoveButton('block-table-move-col', 'left', '左移一欄（Alt+←）');
+    moveLeftBtn.disabled = colIndex === 0;
+    moveLeftBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      moveTableColumn(block, 0, colIndex, -1);
+    });
+    colBtns.appendChild(moveLeftBtn);
+
+    var insColBtn = document.createElement('button');
+    insColBtn.type = 'button';
+    insColBtn.className = 'block-table-ins-col';
+    insColBtn.title = '在左邊插入一欄';
+    insColBtn.textContent = '+';
+    insColBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      insertTableColumnBefore(block, colIndex);
+    });
+    colBtns.appendChild(insColBtn);
+
+    var alignBtn = document.createElement('button');
+    alignBtn.type = 'button';
+    alignBtn.className = 'block-table-align-col' + (align ? '' : ' is-default');
+    var nextAlign = nextTableAlign(align);
+    alignBtn.title = '對齊：' + (align ? TABLE_ALIGN_LABELS[align] : '預設')
+      + '（點擊改為' + (nextAlign ? TABLE_ALIGN_LABELS[nextAlign] : '預設') + '）';
+    alignBtn.innerHTML = createTableAlignIcon(align);
+    alignBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      cycleTableColumnAlign(block, colIndex);
+    });
+    colBtns.appendChild(alignBtn);
+
+    var delColBtn = document.createElement('button');
+    delColBtn.type = 'button';
+    delColBtn.className = 'block-table-del-col';
+    delColBtn.title = '刪除這一欄';
+    delColBtn.textContent = '×';
+    delColBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      removeTableColumn(block, colIndex);
+    });
+    colBtns.appendChild(delColBtn);
+
+    var moveRightBtn = createTableMoveButton('block-table-move-col', 'right', '右移一欄（Alt+→）');
+    moveRightBtn.disabled = colIndex >= colCount - 1;
+    moveRightBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      moveTableColumn(block, 0, colIndex, 1);
+    });
+    colBtns.appendChild(moveRightBtn);
+    return colBtns;
+  }
+
+  // A thin row above the header holding every column's controls, so they sit
+  // clear of the header text (like the row controls in the left-hand column).
+  // It lives in <thead> so the tbody-only row indexing elsewhere is unaffected.
+  function createTableControlStrip(block, colCount) {
+    var thead = document.createElement('thead');
+    var tr = document.createElement('tr');
+    tr.className = 'block-table-strip';
+    for (var c = -1; c <= colCount; c++) {
+      var cell = document.createElement('th');
+      cell.className = 'block-table-strip-cell';
+      if (c >= 0 && c < colCount) {
+        cell.appendChild(createTableColumnControls(block, c, colCount));
+      }
+      tr.appendChild(cell);
+    }
+    thead.appendChild(tr);
+    return thead;
+  }
+
   function renderTableBlock(block) {
     var group = document.createElement('div');
 
@@ -1437,6 +1595,22 @@ window.NotesEditor = (function () {
           removeTableRow(block, rowIndex);
         });
         rowBtns.appendChild(delRowBtn);
+
+        var moveRowUpBtn = createTableMoveButton('block-table-move-row', 'up', '上移一列（Alt+↑）');
+        moveRowUpBtn.disabled = rowIndex <= 1;
+        moveRowUpBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          moveTableRow(block, rowIndex, 0, -1);
+        });
+        rowBtns.appendChild(moveRowUpBtn);
+
+        var moveRowDownBtn = createTableMoveButton('block-table-move-row', 'down', '下移一列（Alt+↓）');
+        moveRowDownBtn.disabled = rowIndex >= block.rows.length - 1;
+        moveRowDownBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          moveTableRow(block, rowIndex, 0, 1);
+        });
+        rowBtns.appendChild(moveRowDownBtn);
         cornerCell.appendChild(rowBtns);
       } else {
         var cornerBtns = document.createElement('div');
@@ -1500,48 +1674,6 @@ window.NotesEditor = (function () {
           cell.appendChild(text);
         }
 
-        if (rowIndex === 0) {
-          var colBtns = document.createElement('div');
-          colBtns.className = 'block-table-col-btns';
-          colBtns.appendChild(createTableDot());
-
-          var insColBtn = document.createElement('button');
-          insColBtn.type = 'button';
-          insColBtn.className = 'block-table-ins-col';
-          insColBtn.title = '在左邊插入一欄';
-          insColBtn.textContent = '+';
-          insColBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            insertTableColumnBefore(block, colIndex);
-          });
-          colBtns.appendChild(insColBtn);
-          cell.appendChild(colBtns);
-
-          var alignBtn = document.createElement('button');
-          alignBtn.type = 'button';
-          alignBtn.className = 'block-table-align-col' + (align ? '' : ' is-default');
-          var nextAlign = nextTableAlign(align);
-          alignBtn.title = '對齊：' + (align ? TABLE_ALIGN_LABELS[align] : '預設')
-            + '（點擊改為' + (nextAlign ? TABLE_ALIGN_LABELS[nextAlign] : '預設') + '）';
-          alignBtn.innerHTML = createTableAlignIcon(align);
-          alignBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            cycleTableColumnAlign(block, colIndex);
-          });
-          colBtns.appendChild(alignBtn);
-
-          var delColBtn = document.createElement('button');
-          delColBtn.type = 'button';
-          delColBtn.className = 'block-table-del-col';
-          delColBtn.title = '刪除這一欄';
-          delColBtn.textContent = '×';
-          delColBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            removeTableColumn(block, colIndex);
-          });
-          colBtns.appendChild(delColBtn);
-        }
-
         tr.appendChild(cell);
       });
 
@@ -1583,6 +1715,7 @@ window.NotesEditor = (function () {
     addRowTr.appendChild(addRowCell);
     tbody.appendChild(addRowTr);
 
+    table.appendChild(createTableControlStrip(block, colCount));
     table.appendChild(tbody);
     row.appendChild(table);
     group.appendChild(row);
