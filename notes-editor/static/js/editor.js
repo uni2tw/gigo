@@ -35,6 +35,8 @@ window.NotesEditor = (function () {
   // focus cell as row / column indexes into block.rows). Native selection can't
   // cross the per-cell contentEditable spans, so the range is tracked here.
   var tableRange = null;
+  // Read-only preview (an old note version): no editing, no change events.
+  var readOnly = false;
   var dragSelectMoved = false;
 
   var searchBar = null;
@@ -391,7 +393,7 @@ window.NotesEditor = (function () {
     });
 
     container.addEventListener('mousedown', function (e) {
-      if (e.button !== 0) {
+      if (e.button !== 0 || readOnly) {
         return;
       }
       var row = e.target.closest && e.target.closest('.block-row[data-id]');
@@ -662,6 +664,9 @@ window.NotesEditor = (function () {
   }
 
   function commitChange(forceNewEntry) {
+    if (readOnly) {
+      return;
+    }
     pushHistory(forceNewEntry);
     onChange();
   }
@@ -828,6 +833,9 @@ window.NotesEditor = (function () {
   }
 
   function undo() {
+    if (readOnly) {
+      return;
+    }
     if (historyIndex <= 0) {
       return;
     }
@@ -836,6 +844,9 @@ window.NotesEditor = (function () {
   }
 
   function redo() {
+    if (readOnly) {
+      return;
+    }
     if (historyIndex >= history.length - 1) {
       return;
     }
@@ -967,6 +978,29 @@ window.NotesEditor = (function () {
     }
   }
 
+  // Freezes the rendered DOM for the read-only preview: nothing editable, form
+  // controls inert. (Edit buttons are hidden by CSS via .editor-readonly.)
+  function applyReadOnlyDom() {
+    Array.prototype.forEach.call(container.querySelectorAll('[contenteditable]'), function (el) {
+      el.contentEditable = 'false';
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('input, select, textarea'), function (el) {
+      el.disabled = true;
+    });
+  }
+
+  // Switch the editor between editable and read-only. Callers load() the
+  // content to show right after, which re-renders with the new mode.
+  function setReadOnly(flag) {
+    readOnly = !!flag;
+    container.classList.toggle('editor-readonly', readOnly);
+    if (readOnly) {
+      clearTableRange();
+      clearBlockSelection(true);
+      closeSearchBar();
+    }
+  }
+
   function getScrollParent(el) {
     for (var p = el.parentElement; p; p = p.parentElement) {
       var overflowY = window.getComputedStyle(p).overflowY;
@@ -990,6 +1024,9 @@ window.NotesEditor = (function () {
     container.classList.remove('table-range-active');
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
+    if (readOnly) {
+      applyReadOnlyDom();
+    }
     if (scroller && scroller.scrollTop !== scrollTop) {
       scroller.scrollTop = scrollTop;
     }
@@ -5262,6 +5299,7 @@ window.NotesEditor = (function () {
   return {
     init: init,
     load: load,
+    setReadOnly: setReadOnly,
     getBlocks: getBlocks,
     getMarkdownSource: getMarkdownSource,
     getMarkdownSourceWithCursor: getMarkdownSourceWithCursor,

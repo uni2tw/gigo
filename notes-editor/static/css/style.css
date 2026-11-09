@@ -304,7 +304,8 @@ html, body {
 }
 
 #btn-copy-source,
-#btn-toggle-source {
+#btn-toggle-source,
+#btn-versions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -320,12 +321,14 @@ html, body {
 }
 
 #btn-copy-source .btn-icon,
-#btn-toggle-source .btn-icon {
+#btn-toggle-source .btn-icon,
+#btn-versions .btn-icon {
   flex-shrink: 0;
 }
 
 #btn-copy-source:hover,
-#btn-toggle-source:hover {
+#btn-toggle-source:hover,
+#btn-versions:hover {
   background: var(--hover-bg);
 }
 
@@ -1744,5 +1747,150 @@ body.link-open-modifier-active .block-text a {
 .block-insert-zone:hover .block-insert-before-btn {
   background: var(--hover-bg);
   color: var(--text-color);
+}
+
+
+/* Read-only preview of an old note version: hide every editing control. */
+.editor-readonly .block-table-strip,
+.editor-readonly .block-table-control-cell > *,
+.editor-readonly .block-table-add-row-cell,
+.editor-readonly .block-table-add-col,
+.editor-readonly .block-image-delete,
+.editor-readonly .block-image-size,
+.editor-readonly .block-hr-delete,
+.editor-readonly .block-code-delete,
+.editor-readonly .block-callout-delete,
+.editor-readonly .block-callout-unwrap,
+.editor-readonly .block-format-trigger,
+.editor-readonly .block-insert-zone {
+  display: none !important;
+}
+
+.editor-readonly .block-table-checkbox-cell,
+.editor-readonly .block-text {
+  cursor: default;
+}
+
+#version-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: #fff8e1;
+  border: 1px solid #ffe08a;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #6b4f00;
+}
+
+#version-banner[hidden] {
+  display: none;
+}
+
+#version-banner .version-banner-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+#version-banner button,
+#versions-panel button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#version-banner button:hover,
+#versions-panel button:hover {
+  background: var(--hover-bg);
+}
+
+#version-banner button.primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+}
+
+#version-banner button.primary:hover {
+  background: #1a5fcc;
+}
+
+#versions-panel {
+  position: absolute;
+  right: 0;
+  top: 46px;
+  z-index: 50;
+  pointer-events: auto;
+  width: 340px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  color: #24292f;
+}
+
+#versions-panel[hidden] {
+  display: none;
+}
+
+#versions-panel .versions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+#versions-panel .versions-empty {
+  padding: 12px 4px;
+  color: #6e7781;
+}
+
+#versions-panel .version-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+#versions-panel .version-item.is-active {
+  background: #fff8e1;
+}
+
+#versions-panel .version-info {
+  flex: 1;
+  min-width: 0;
+}
+
+#versions-panel .version-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#versions-panel .version-time {
+  font-size: 12px;
+  color: #6e7781;
+}
+
+#versions-panel .version-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #eaeef2;
+  font-size: 11px;
+  color: #57606a;
 }
 

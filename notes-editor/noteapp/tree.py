@@ -1,6 +1,7 @@
 import os
 import shutil
 
+from . import versions
 from .pathsafety import PathSecurityError, resolve_safe_path
 
 NOTE_EXT = '.md'
@@ -94,6 +95,8 @@ def delete_node(root, rel_path, images=None):
         raise NodeNotFoundError('Node not found: %r' % (rel_path,))
 
     os.remove(target_abs)
+    if rel_path.lower().endswith(NOTE_EXT):
+        versions.delete_note_versions(root, rel_path)
 
     if not images:
         return
@@ -135,5 +138,8 @@ def move_or_rename_node(root, rel_path, new_rel_path):
     if not os.path.isdir(dest_parent):
         raise NodeNotFoundError('Target folder not found for: %r' % (new_rel_path,))
 
+    is_note = os.path.isfile(source_abs) and rel_path.lower().endswith(NOTE_EXT)
     shutil.move(source_abs, dest_abs)
+    if is_note:
+        versions.move_note_versions(root, rel_path, new_rel_path)
     return _rel(root, dest_abs)

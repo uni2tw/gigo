@@ -62,6 +62,38 @@ window.NotesApi = (function () {
     });
   }
 
+  function versionsUrl(path) {
+    return '/api/notes/' + encodeURI(path) + '/versions';
+  }
+
+  function listVersions(path) {
+    return request(versionsUrl(path), { method: 'GET' });
+  }
+
+  function createVersion(path, label, blocks) {
+    return request(versionsUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: label, blocks: blocks }),
+    });
+  }
+
+  function getVersion(path, versionId) {
+    return request(versionsUrl(path) + '/' + encodeURIComponent(versionId), { method: 'GET' });
+  }
+
+  function deleteVersion(path, versionId) {
+    return request(versionsUrl(path) + '/' + encodeURIComponent(versionId), { method: 'DELETE' });
+  }
+
+  function restoreVersion(path, versionId, blocks) {
+    return request(versionsUrl(path) + '/' + encodeURIComponent(versionId) + '/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks: blocks }),
+    });
+  }
+
   function uploadImage(notePath, file) {
     var formData = new FormData();
     formData.append('file', file);
@@ -83,6 +115,11 @@ window.NotesApi = (function () {
     getNote: getNote,
     getNoteMeta: getNoteMeta,
     saveNote: saveNote,
+    listVersions: listVersions,
+    createVersion: createVersion,
+    getVersion: getVersion,
+    deleteVersion: deleteVersion,
+    restoreVersion: restoreVersion,
     uploadImage: uploadImage,
     fileUrl: fileUrl,
   };

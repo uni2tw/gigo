@@ -13,6 +13,11 @@
   var copySourceBtn = null;
   var copyFeedbackTimer = null;
   var noteTitleEl = null;
+  // The old version currently shown read-only ({ id, label, created_at }), or null.
+  var previewing = null;
+  var versionsBtn = null;
+  var versionsPanel = null;
+  var versionBanner = null;
 
   function setButtonLabel(btn, text) {
     btn.querySelector('.btn-label').textContent = text;
@@ -147,6 +152,8 @@
   }
 
   function selectNode(node) {
+    leavePreviewState();
+    closeVersionsPanel();
     currentNode = node;
     activeParentPath = parentDirOf(node.path);
     window.NotesTree.setSelected(node.path);
@@ -163,7 +170,7 @@
     }
     hasUnsavedChanges = false;
 
-    window.NotesApi.getNote(node.path).then(function (data) {
+    return window.NotesApi.getNote(node.path).then(function (data) {
       window.NotesEditor.load(data.blocks, parentDirOf(node.path));
       lastKnownUpdatedAt = data.updated_at;
       setStatus(formatRelativeTime(data.updated_at));
@@ -277,8 +284,34 @@
     });
   }
 
+  function performSave() {
+    saveTimer = null;
+    if (viewMode === 'source') {
+      window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value);
+    }
+    var blocks = window.NotesEditor.getBlocks();
+    var savingNode = currentNode;
+    var savingExpectedUpdatedAt = lastKnownUpdatedAt;
+    return window.NotesApi.saveNote(savingNode.path, blocks, savingExpectedUpdatedAt).then(function (result) {
+      if (currentNode === savingNode) {
+        hasUnsavedChanges = false;
+        lastKnownUpdatedAt = result.updated_at;
+        setStatus('已儲存 ' + new Date().toLocaleTimeString());
+      }
+    }).catch(function (err) {
+      if (currentNode === savingNode) {
+        if (err.status === 409) {
+          notifyConflict('儲存失敗，此筆記已被其他分頁更新', '此筆記已被其他分頁更新，你的變更尚未儲存。');
+        } else {
+          setStatus('儲存失敗，內容尚未儲存：' + err.message);
+        }
+      }
+      throw err;
+    });
+  }
+
   function scheduleSave() {
-    if (!currentNode) {
+    if (!currentNode || previewing) {
       return;
     }
     hasUnsavedChanges = true;
@@ -287,32 +320,24 @@
       clearTimeout(saveTimer);
     }
     saveTimer = setTimeout(function () {
-      if (viewMode === 'source') {
-        window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value);
-      }
-      var blocks = window.NotesEditor.getBlocks();
-      var savingNode = currentNode;
-      var savingExpectedUpdatedAt = lastKnownUpdatedAt;
-      window.NotesApi.saveNote(savingNode.path, blocks, savingExpectedUpdatedAt).then(function (result) {
-        if (currentNode === savingNode) {
-          hasUnsavedChanges = false;
-          lastKnownUpdatedAt = result.updated_at;
-          setStatus('已儲存 ' + new Date().toLocaleTimeString());
-        }
-      }).catch(function (err) {
-        if (currentNode === savingNode) {
-          if (err.status === 409) {
-            notifyConflict('儲存失敗，此筆記已被其他分頁更新', '此筆記已被其他分頁更新，你的變更尚未儲存。');
-          } else {
-            setStatus('儲存失敗，內容尚未儲存：' + err.message);
-          }
-        }
-      });
+      performSave().catch(function () {});
     }, 800);
   }
 
+  // Saves pending edits right now (resolves at once when there are none).
+  function flushSave() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (!currentNode || !hasUnsavedChanges) {
+      return Promise.resolve();
+    }
+    return performSave();
+  }
+
   function checkForRemoteUpdate() {
-    if (!currentNode || hasUnsavedChanges) {
+    if (!currentNode || hasUnsavedChanges || previewing) {
       return;
     }
     var checkedNode = currentNode;
@@ -346,6 +371,8 @@
 
   function onNodeDeleted(path) {
     if (currentNode && (currentNode.path === path || currentNode.path.indexOf(path + '/') === 0)) {
+      leavePreviewState();
+      closeVersionsPanel();
       currentNode = null;
       document.getElementById('editor-empty').hidden = false;
       document.getElementById('editor-content').hidden = true;
@@ -367,8 +394,221 @@
     reloadTree();
   }
 
-  function commitTitleRename() {
+  // -- Versions ---------------------------------------------------------
+
+  function pad2(n) {
+    return n < 10 ? '0' + n : String(n);
+  }
+
+  function formatVersionTime(epochSeconds) {
+    var d = new Date(epochSeconds * 1000);
+    return d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate())
+      + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  function closeVersionsPanel() {
+    if (versionsPanel) {
+      versionsPanel.hidden = true;
+    }
+  }
+
+  function toggleVersionsPanel() {
+    if (!versionsPanel.hidden) {
+      closeVersionsPanel();
+      return;
+    }
+    versionsPanel.hidden = false;
+    refreshVersionsPanel();
+  }
+
+  function refreshVersionsPanel() {
+    if (!currentNode || versionsPanel.hidden) {
+      return Promise.resolve();
+    }
+    var node = currentNode;
+    return window.NotesApi.listVersions(node.path).then(function (data) {
+      if (currentNode === node) {
+        renderVersionsPanel(data.versions);
+      }
+    }).catch(function (err) {
+      versionsPanel.textContent = '載入版本失敗：' + err.message;
+    });
+  }
+
+  function makeButton(text, onClick, className) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = text;
+    if (className) {
+      btn.className = className;
+    }
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function renderVersionsPanel(list) {
+    versionsPanel.innerHTML = '';
+    var head = document.createElement('div');
+    head.className = 'versions-head';
+    var title = document.createElement('span');
+    title.textContent = '版本（' + list.length + '）';
+    head.appendChild(title);
+    if (!previewing) {
+      head.appendChild(makeButton('＋ 儲存目前為新版本', saveVersion));
+    }
+    versionsPanel.appendChild(head);
+
+    if (!list.length) {
+      var empty = document.createElement('div');
+      empty.className = 'versions-empty';
+      empty.textContent = '還沒有儲存過版本。按上方按鈕，把目前內容凍結成一個版本。';
+      versionsPanel.appendChild(empty);
+      return;
+    }
+    list.forEach(function (v) {
+      var item = document.createElement('div');
+      item.className = 'version-item' + (previewing && previewing.id === v.id ? ' is-active' : '');
+      var info = document.createElement('div');
+      info.className = 'version-info';
+      var label = document.createElement('div');
+      label.className = 'version-label';
+      label.textContent = v.label || '(未命名)';
+      label.title = v.label || '';
+      if (v.kind === 'backup') {
+        var badge = document.createElement('span');
+        badge.className = 'version-badge';
+        badge.textContent = '自動備份';
+        label.appendChild(badge);
+      }
+      var time = document.createElement('div');
+      time.className = 'version-time';
+      time.textContent = formatVersionTime(v.created_at);
+      info.appendChild(label);
+      info.appendChild(time);
+      item.appendChild(info);
+      item.appendChild(makeButton('預覽', function () {
+        previewVersion(v);
+      }));
+      item.appendChild(makeButton('刪除', function () {
+        deleteVersion(v);
+      }));
+      versionsPanel.appendChild(item);
+    });
+  }
+
+  function saveVersion() {
+    if (!currentNode || previewing) {
+      return;
+    }
+    var node = currentNode;
+    var now = new Date();
+    var defaultLabel = '版本 ' + pad2(now.getMonth() + 1) + '/' + pad2(now.getDate())
+      + ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+    window.NotesModal.prompt('版本名稱', defaultLabel).then(function (label) {
+      if (!label || currentNode !== node || previewing) {
+        return;
+      }
+      if (viewMode === 'source') {
+        window.NotesEditor.loadFromMarkdownSource(sourceEditorEl.value);
+      }
+      // The editor's own content is sent so edits not yet autosaved are included.
+      return window.NotesApi.createVersion(node.path, label, window.NotesEditor.getBlocks()).then(function () {
+        setStatus('已儲存版本「' + label + '」');
+        return refreshVersionsPanel();
+      });
+    }).catch(function (err) {
+      window.alert('儲存版本失敗：' + err.message);
+    });
+  }
+
+  function showPreviewBanner() {
+    versionBanner.innerHTML = '';
+    var text = document.createElement('span');
+    text.className = 'version-banner-text';
+    text.textContent = '正在預覽版本「' + (previewing.label || '未命名') + '」（'
+      + formatVersionTime(previewing.created_at) + '）。唯讀，目前的筆記內容沒有被更動。';
+    versionBanner.appendChild(text);
+    versionBanner.appendChild(makeButton('還原到此版本', restorePreviewedVersion, 'primary'));
+    versionBanner.appendChild(makeButton('回到目前內容', function () {
+      reloadCurrentNode();
+    }));
+    versionBanner.hidden = false;
+  }
+
+  // Back to the normal editing UI (the caller reloads the note content).
+  function leavePreviewState() {
+    if (!previewing) {
+      return;
+    }
+    previewing = null;
+    window.NotesEditor.setReadOnly(false);
+    versionBanner.hidden = true;
+    versionBanner.innerHTML = '';
+    toggleSourceBtn.disabled = false;
+    noteTitleEl.contentEditable = 'true';
+  }
+
+  function previewVersion(v) {
     if (!currentNode) {
+      return;
+    }
+    var node = currentNode;
+    flushSave().then(function () {
+      return window.NotesApi.getVersion(node.path, v.id);
+    }).then(function (data) {
+      if (currentNode !== node) {
+        return;
+      }
+      resetViewMode();
+      previewing = { id: data.id, label: data.label, created_at: data.created_at };
+      toggleSourceBtn.disabled = true;
+      noteTitleEl.contentEditable = 'false';
+      window.NotesEditor.setReadOnly(true);
+      window.NotesEditor.load(data.blocks, parentDirOf(node.path));
+      showPreviewBanner();
+      setStatus('預覽版本中（唯讀）');
+      closeVersionsPanel();
+    }).catch(function (err) {
+      window.alert('無法預覽版本：' + err.message);
+    });
+  }
+
+  function restorePreviewedVersion() {
+    if (!currentNode || !previewing) {
+      return;
+    }
+    var node = currentNode;
+    var versionId = previewing.id;
+    // Pending edits were flushed before the preview began, so the note on disk
+    // is its current content; the server backs it up before overwriting.
+    window.NotesApi.restoreVersion(node.path, versionId).then(function () {
+      return selectNode(node);
+    }).then(function () {
+      setStatus('已還原到所選版本；還原前的內容已存成「自動備份」版本');
+    }).catch(function (err) {
+      window.alert('還原失敗：' + err.message);
+    });
+  }
+
+  function deleteVersion(v) {
+    var node = currentNode;
+    window.NotesModal.confirm('確定刪除版本「' + (v.label || '未命名') + '」？此動作無法復原。').then(function (ok) {
+      if (!ok || currentNode !== node) {
+        return;
+      }
+      return window.NotesApi.deleteVersion(node.path, v.id).then(function () {
+        if (previewing && previewing.id === v.id) {
+          reloadCurrentNode();
+        }
+        return refreshVersionsPanel();
+      });
+    }).catch(function (err) {
+      window.alert('刪除版本失敗：' + err.message);
+    });
+  }
+
+  function commitTitleRename() {
+    if (!currentNode || previewing) {
       return;
     }
     var newName = noteTitleEl.textContent.replace(/\s+/g, ' ').trim();
@@ -394,6 +634,9 @@
     toggleSourceBtn = document.getElementById('btn-toggle-source');
     copySourceBtn = document.getElementById('btn-copy-source');
     noteTitleEl = document.getElementById('note-title');
+    versionsBtn = document.getElementById('btn-versions');
+    versionsPanel = document.getElementById('versions-panel');
+    versionBanner = document.getElementById('version-banner');
 
     noteTitleEl.addEventListener('blur', commitTitleRename);
     noteTitleEl.addEventListener('keydown', function (e) {
@@ -432,6 +675,17 @@
     toggleSourceBtn.addEventListener('click', toggleViewMode);
     copySourceBtn.addEventListener('click', copyCurrentSource);
     sourceEditorEl.addEventListener('input', scheduleSave);
+    versionsBtn.addEventListener('click', toggleVersionsPanel);
+    document.addEventListener('mousedown', function (e) {
+      if (!versionsPanel.hidden && !versionsPanel.contains(e.target) && !versionsBtn.contains(e.target)) {
+        closeVersionsPanel();
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !versionsPanel.hidden) {
+        closeVersionsPanel();
+      }
+    });
 
     staleCheckTimer = setInterval(checkForRemoteUpdate, 20000);
     window.addEventListener('focus', checkForRemoteUpdate);
