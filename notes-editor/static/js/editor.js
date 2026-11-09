@@ -959,6 +959,7 @@ window.NotesEditor = (function () {
     ensureTrailingParagraph();
     openDropdown = null;
     tableRange = null;
+    container.classList.remove('table-range-active');
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
     if (scroller && scroller.scrollTop !== scrollTop) {
@@ -3858,6 +3859,7 @@ window.NotesEditor = (function () {
         container.classList.remove('table-range-dragging');
       }
     }
+    container.classList.toggle('table-range-active', !!tableRange);
     Array.prototype.forEach.call(container.querySelectorAll('.cell-selected'), function (el) {
       el.classList.remove('cell-selected');
     });

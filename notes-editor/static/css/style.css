@@ -514,6 +514,12 @@ html, body {
   user-select: none;
 }
 
+/* The native selection mirrored behind a cell range spans whole rows in DOM
+   order; the range's own rectangle highlight is the only one to show. */
+.table-range-active ::selection {
+  background: transparent;
+}
+
 .block-table-checkbox-cell {
   display: flex;
   align-items: center;
