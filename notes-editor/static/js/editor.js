@@ -241,6 +241,34 @@ window.NotesEditor = (function () {
     }, true);
 
     container.addEventListener('paste', function (e) {
+      // A pasted table (Markdown, or tab-separated text from Excel / a web
+      // table) fills the grid starting at the caret cell, like a spreadsheet.
+      var gridText = e.clipboardData && e.clipboardData.getData('text/plain');
+      var grid = gridText ? parseClipboardGrid(gridText) : null;
+      if (grid) {
+        var gridStart = null;
+        if (tableRange) {
+          gridStart = {
+            blockId: tableRange.blockId,
+            r: Math.min(tableRange.ar, tableRange.fr),
+            c: Math.min(tableRange.ac, tableRange.fc),
+          };
+        } else {
+          var gridCellEl = document.activeElement && document.activeElement.closest
+            ? document.activeElement.closest('td, th') : null;
+          var gridCoords = gridCellEl && container.contains(gridCellEl) ? getTableCellCoords(gridCellEl) : null;
+          var gridRowEl = gridCoords && gridCellEl.closest('[data-id]');
+          if (gridRowEl) {
+            gridStart = { blockId: gridRowEl.dataset.id, r: gridCoords.r, c: gridCoords.c };
+          }
+        }
+        if (gridStart) {
+          e.preventDefault();
+          clearTableRange();
+          pasteGridIntoTable(gridStart.blockId, gridStart.r, gridStart.c, grid);
+          return;
+        }
+      }
       if (tableRange) {
         // Pasting over a multi-cell range isn't supported: drop the range and
         // park the caret in its top-left cell so the next paste lands there.
@@ -3689,6 +3717,53 @@ window.NotesEditor = (function () {
       return null;
     }
     return { block: block, cells: cells, r0: r0, r1: r1, c0: c0, c1: c1 };
+  }
+
+  // Clipboard text -> 2D array of cell strings when it looks like a table:
+  // a lone Markdown table (separator row dropped) or tab-separated lines.
+  // Anything else (plain text, a single value) returns null.
+  function parseClipboardGrid(text) {
+    var normalized = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    if (!normalized) {
+      return null;
+    }
+    var grid = null;
+    var parsed = window.NotesMarkdown.parseMarkdownToBlocks(normalized);
+    if (parsed.length === 1 && parsed[0].type === 'table') {
+      grid = parsed[0].rows.map(function (cells) { return cells.slice(); });
+    } else if (normalized.indexOf('\t') !== -1) {
+      grid = normalized.split('\n').map(function (line) {
+        return line.split('\t').map(function (cell) { return cell.trim(); });
+      });
+    }
+    if (!grid || (grid.length === 1 && grid[0].length === 1)) {
+      return null;
+    }
+    return grid;
+  }
+
+  // Writes grid into the table from (r0, c0): missing rows are appended,
+  // columns beyond the table's last column are dropped.
+  function pasteGridIntoTable(blockId, r0, c0, grid) {
+    var block = findBlock(blocks, blockId);
+    if (!block || block.type !== 'table') {
+      return;
+    }
+    var colCount = block.rows[0].length;
+    grid.forEach(function (gridRow, i) {
+      var r = r0 + i;
+      while (r >= block.rows.length) {
+        block.rows.push(new Array(colCount).fill(''));
+      }
+      gridRow.forEach(function (value, j) {
+        if (c0 + j < colCount) {
+          block.rows[r][c0 + j] = value;
+        }
+      });
+    });
+    render();
+    focusTableCell(blockId, r0, c0);
+    commitChange(true);
   }
 
   // Row / column (indexes into block.rows) of a td/th in a table body, or null
