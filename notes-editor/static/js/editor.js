@@ -30,6 +30,11 @@ window.NotesEditor = (function () {
   var blockSelectionRange = null; // { startId, endId } in flattened document order
   var dragSelectStartId = null;
   var dragSelectStartCell = null;
+  // Rectangular cell selection inside one table, set by Shift+arrows leaving a
+  // cell or by dragging across cells: { blockId, ar, ac, fr, fc } (anchor and
+  // focus cell as row / column indexes into block.rows). Native selection can't
+  // cross the per-cell contentEditable spans, so the range is tracked here.
+  var tableRange = null;
   var dragSelectMoved = false;
 
   var searchBar = null;
@@ -228,8 +233,23 @@ window.NotesEditor = (function () {
     document.addEventListener('selectionchange', updateTableCellSelection);
     container.addEventListener('copy', handleCopy);
     container.addEventListener('cut', handleCut);
+    container.addEventListener('keydown', function (e) {
+      if (tableRange && handleTableRangeKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
 
     container.addEventListener('paste', function (e) {
+      if (tableRange) {
+        // Pasting over a multi-cell range isn't supported: drop the range and
+        // park the caret in its top-left cell so the next paste lands there.
+        e.preventDefault();
+        var pasteRange = tableRange;
+        clearTableRange();
+        focusTableCell(pasteRange.blockId, Math.min(pasteRange.ar, pasteRange.fr), Math.min(pasteRange.ac, pasteRange.fc));
+        return;
+      }
       var textEl = findBlockTextAncestor(document.activeElement);
       if (!textEl || !container.contains(textEl)) {
         return;
@@ -349,6 +369,9 @@ window.NotesEditor = (function () {
       var row = e.target.closest && e.target.closest('.block-row[data-id]');
       if (!row) {
         return;
+      }
+      if (tableRange) {
+        clearTableRange();
       }
       dragSelectStartId = row.dataset.id;
       dragSelectStartCell = e.target.closest && e.target.closest('td, th');
@@ -935,6 +958,7 @@ window.NotesEditor = (function () {
     var wasEditing = container.contains(document.activeElement);
     ensureTrailingParagraph();
     openDropdown = null;
+    tableRange = null;
     container.innerHTML = '';
     container.appendChild(renderList(blocks));
     if (scroller && scroller.scrollTop !== scrollTop) {
@@ -1248,6 +1272,12 @@ window.NotesEditor = (function () {
       } else {
         moveTableColumn(block, rowIndex, colIndex, e.key === 'ArrowLeft' ? -1 : 1);
       }
+      return;
+    }
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+      && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1
+      && startTableRangeFromCaret(e, block, rowIndex, colIndex)) {
+      e.preventDefault();
       return;
     }
     var cellTextEl = !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target && e.target.closest
@@ -3275,15 +3305,27 @@ window.NotesEditor = (function () {
       var target2 = target.closest && target.closest('td, th');
       var startBlock = findBlock(blocks, dragSelectStartId);
       if (startBlock && startBlock.type === 'table' && dragSelectStartCell && target2 && target2 !== dragSelectStartCell) {
-        dragSelectMoved = true;
-        e.preventDefault();
-        setBlockSelectionRange(dragSelectStartId, dragSelectStartId);
+        // Dragging to a different cell of the same table selects the
+        // rectangle of cells between the two, not the whole table.
+        var startCoords = getTableCellCoords(dragSelectStartCell);
+        var endCoords = getTableCellCoords(target2);
+        if (startCoords && endCoords) {
+          dragSelectMoved = true;
+          e.preventDefault();
+          setTableRange(dragSelectStartId, startCoords.r, startCoords.c, endCoords.r, endCoords.c, true);
+        }
         return;
+      }
+      if (tableRange) {
+        clearTableRange();
       }
       if (blockSelectionRange) {
         clearBlockSelection();
       }
       return;
+    }
+    if (tableRange) {
+      clearTableRange();
     }
     dragSelectMoved = true;
     e.preventDefault();
@@ -3294,7 +3336,12 @@ window.NotesEditor = (function () {
     document.removeEventListener('mousemove', handleDragSelectMove);
     document.removeEventListener('mouseup', handleDragSelectUp);
     dragSelectStartCell = null;
-    if (!dragSelectMoved) {
+    if (tableRange) {
+      // The browser's own drag-select was suppressed while dragging; now give
+      // the range a native selection so Ctrl+C / Ctrl+X still fire.
+      container.classList.remove('table-range-dragging');
+      applyTableRangeNative();
+    } else if (!dragSelectMoved) {
       clearBlockSelection();
     }
     dragSelectStartId = null;
@@ -3573,6 +3620,27 @@ window.NotesEditor = (function () {
   // or more of them. Returns the rectangle they cover (row/col indexes into
   // block.rows) plus the DOM cells, or null for a selection inside one cell.
   function getTableCellSelection() {
+    if (tableRange) {
+      var rangeTable = container.querySelector('[data-id="' + tableRange.blockId + '"] table.block-table');
+      var rangeBlock = findBlock(blocks, tableRange.blockId);
+      if (!rangeTable || !rangeBlock || rangeBlock.type !== 'table') {
+        tableRange = null;
+      } else {
+        var rr0 = Math.min(tableRange.ar, tableRange.fr), rr1 = Math.max(tableRange.ar, tableRange.fr);
+        var rc0 = Math.min(tableRange.ac, tableRange.fc), rc1 = Math.max(tableRange.ac, tableRange.fc);
+        var rangeTrs = rangeTable.querySelectorAll('tbody > tr');
+        var rangeCells = [];
+        for (var rr = rr0; rr <= rr1; rr++) {
+          for (var rc = rc0; rc <= rc1; rc++) {
+            var rangeCell = rangeTrs[rr] && rangeTrs[rr].children[rc + 1];
+            if (rangeCell) {
+              rangeCells.push(rangeCell);
+            }
+          }
+        }
+        return { block: rangeBlock, cells: rangeCells, r0: rr0, r1: rr1, c0: rc0, c1: rc1 };
+      }
+    }
     var sel = window.getSelection();
     if (!sel.rangeCount || sel.isCollapsed) {
       return null;
@@ -3622,7 +3690,174 @@ window.NotesEditor = (function () {
     return { block: block, cells: cells, r0: r0, r1: r1, c0: c0, c1: c1 };
   }
 
+  // Row / column (indexes into block.rows) of a td/th in a table body, or null
+  // for the control strip, the control column and the add-row line.
+  function getTableCellCoords(cellEl) {
+    var tr = cellEl && cellEl.parentElement;
+    var tbody = tr && tr.parentElement;
+    if (!tbody || tbody.tagName !== 'TBODY') {
+      return null;
+    }
+    var c = cellEl.cellIndex - 1;
+    var rowEl = cellEl.closest('[data-id]');
+    var block = rowEl && findBlock(blocks, rowEl.dataset.id);
+    var r = Array.prototype.indexOf.call(tbody.children, tr);
+    if (!block || block.type !== 'table' || c < 0 || r >= block.rows.length || c >= block.rows[0].length) {
+      return null;
+    }
+    return { r: r, c: c };
+  }
+
+  function clearTableRange() {
+    if (!tableRange) {
+      return;
+    }
+    tableRange = null;
+    container.classList.remove('table-range-dragging');
+    updateTableCellSelection();
+  }
+
+  // Selects the rectangle of cells between the anchor (ar, ac) and focus
+  // (fr, fc). While dragging, the browser's own selection is kept off and the
+  // native one is only set on mouse-up (applyTableRangeNative).
+  function setTableRange(blockId, ar, ac, fr, fc, dragging) {
+    var block = findBlock(blocks, blockId);
+    if (!block || block.type !== 'table') {
+      return;
+    }
+    var maxR = block.rows.length - 1;
+    var maxC = block.rows[0].length - 1;
+    var clamp = function (v, max) { return Math.max(0, Math.min(max, v)); };
+    ar = clamp(ar, maxR); fr = clamp(fr, maxR);
+    ac = clamp(ac, maxC); fc = clamp(fc, maxC);
+    if (ar === fr && ac === fc) {
+      clearTableRange();
+      if (!dragging) {
+        focusTableCell(blockId, fr, fc);
+      }
+      return;
+    }
+    tableRange = { blockId: blockId, ar: ar, ac: ac, fr: fr, fc: fc };
+    if (dragging) {
+      container.classList.add('table-range-dragging');
+      window.getSelection().removeAllRanges();
+    } else {
+      applyTableRangeNative();
+      var focusInfo = getTableCellSelection();
+      var focusCell = focusInfo && focusInfo.cells.filter(function (cell) {
+        var coords = getTableCellCoords(cell);
+        return coords && coords.r === tableRange.fr && coords.c === tableRange.fc;
+      })[0];
+      if (focusCell && focusCell.scrollIntoView) {
+        focusCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+    updateTableCellSelection();
+  }
+
+  // A native selection spanning the anchor and focus cells keeps the browser's
+  // copy / cut events firing; the rectangle itself comes from tableRange.
+  function applyTableRangeNative() {
+    if (!tableRange) {
+      return;
+    }
+    var rowEl = container.querySelector('[data-id="' + tableRange.blockId + '"]');
+    var trs = rowEl ? rowEl.querySelectorAll('tbody > tr') : [];
+    var textOf = function (r, c) {
+      var cell = trs[r] && trs[r].children[c + 1];
+      return cell && (cell.querySelector('.block-table-cell-text') || cell);
+    };
+    var aEl = textOf(tableRange.ar, tableRange.ac);
+    var fEl = textOf(tableRange.fr, tableRange.fc);
+    if (!aEl || !fEl) {
+      return;
+    }
+    var forward = !!(aEl.compareDocumentPosition(fEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+    try {
+      window.getSelection().setBaseAndExtent(
+        aEl, forward ? 0 : aEl.childNodes.length,
+        fEl, forward ? fEl.childNodes.length : 0
+      );
+    } catch (err) {
+      // Leaving the range un-mirrored natively only costs the native copy path.
+    }
+  }
+
+  // Shift+arrow in a cell: let the browser extend the text selection while it
+  // still can; once the caret is stuck at the cell edge, start (or grow) a
+  // cell range towards the neighbouring cell. True when the key was handled.
+  function startTableRangeFromCaret(e, block, rowIndex, colIndex) {
+    var dr = e.key === 'ArrowUp' ? -1 : (e.key === 'ArrowDown' ? 1 : 0);
+    var dc = e.key === 'ArrowLeft' ? -1 : (e.key === 'ArrowRight' ? 1 : 0);
+    var textEl = e.target && e.target.closest ? e.target.closest('.block-table-cell-text') : null;
+    var sel = window.getSelection();
+    if (textEl && sel.rangeCount && typeof sel.modify === 'function' && textEl.contains(sel.focusNode)) {
+      var beforeNode = sel.focusNode;
+      var beforeOffset = sel.focusOffset;
+      sel.modify('extend', (dr > 0 || dc > 0) ? 'forward' : 'backward', dc ? 'character' : 'line');
+      if (sel.focusNode !== beforeNode || sel.focusOffset !== beforeOffset) {
+        if (textEl.contains(sel.focusNode)) {
+          return true;
+        }
+        sel.extend(beforeNode, beforeOffset);
+      }
+    }
+    var targetRow = rowIndex + dr;
+    var targetCol = colIndex + dc;
+    if (targetRow < 0 || targetRow >= block.rows.length || targetCol < 0 || targetCol >= block.rows[0].length) {
+      return true;
+    }
+    setTableRange(block._id, rowIndex, colIndex, targetRow, targetCol);
+    return true;
+  }
+
+  // Keys while a cell range is active (capture phase, before the cell's own
+  // handlers). True when the key was consumed.
+  function handleTableRangeKey(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || ['Shift', 'Control', 'Alt', 'Meta'].indexOf(e.key) !== -1) {
+      return false;
+    }
+    var range = tableRange;
+    var arrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1;
+    if (e.shiftKey && arrow) {
+      setTableRange(range.blockId, range.ar, range.ac,
+        range.fr + (e.key === 'ArrowUp' ? -1 : (e.key === 'ArrowDown' ? 1 : 0)),
+        range.fc + (e.key === 'ArrowLeft' ? -1 : (e.key === 'ArrowRight' ? 1 : 0)));
+      return true;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      var info = getTableCellSelection();
+      clearTableRange();
+      if (info) {
+        for (var r = info.r0; r <= info.r1; r++) {
+          for (var c = info.c0; c <= info.c1; c++) {
+            info.block.rows[r][c] = '';
+          }
+        }
+        render();
+        focusTableCell(info.block._id, info.r0, info.c0);
+        commitChange(true);
+      }
+      return true;
+    }
+    var leaving = arrow || e.key === 'Escape' || e.key === 'Tab' || e.key === 'Enter' || e.key.length === 1;
+    if (!leaving) {
+      return false;
+    }
+    clearTableRange();
+    focusTableCell(range.blockId, range.fr, range.fc, e.key === 'ArrowLeft' || e.key === 'ArrowUp');
+    return true;
+  }
+
   function updateTableCellSelection() {
+    if (tableRange) {
+      var rangeSel = window.getSelection();
+      var rangeHost = container.querySelector('[data-id="' + tableRange.blockId + '"] table.block-table');
+      if (!rangeHost || (rangeSel.anchorNode && !rangeHost.contains(rangeSel.anchorNode))) {
+        tableRange = null;
+        container.classList.remove('table-range-dragging');
+      }
+    }
     Array.prototype.forEach.call(container.querySelectorAll('.cell-selected'), function (el) {
       el.classList.remove('cell-selected');
     });

@@ -507,6 +507,13 @@ html, body {
   background: rgba(64, 140, 255, 0.18);
 }
 
+/* While a drag paints a cell range, keep the browser from also painting its
+   own text selection in the cell the drag started in. */
+.table-range-dragging,
+.table-range-dragging * {
+  user-select: none;
+}
+
 .block-table-checkbox-cell {
   display: flex;
   align-items: center;
