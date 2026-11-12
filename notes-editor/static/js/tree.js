@@ -2,6 +2,7 @@ window.NotesTree = (function () {
   var container = null;
   var onSelect = null;
   var onFolderClick = null;
+  var onRootClick = null;
   var selectedPath = null;
   var currentTree = [];
   var expandedPaths = {};
@@ -47,9 +48,18 @@ window.NotesTree = (function () {
     container = containerEl;
     onSelect = callbacks.onSelect;
     onFolderClick = callbacks.onFolderClick;
+    onRootClick = callbacks.onRootClick;
 
     document.addEventListener('click', function () {
       closeOpenDropdown();
+    });
+
+    // Clicking the tree's empty space (outside every node) means "the top
+    // level", so new folders / notes can go back there after browsing a folder.
+    container.addEventListener('click', function (e) {
+      if (!e.target.closest('.tree-node') && onRootClick) {
+        onRootClick();
+      }
     });
 
     // Moving to the root only counts when released on the tree's own empty

@@ -356,8 +356,16 @@
     window.NotesTree.setSelected(node.path);
   }
 
+  // Click on the tree's empty space: new folders / notes go to the top level.
+  function onRootClicked() {
+    activeParentPath = '';
+    window.NotesTree.setSelected(currentNode ? currentNode.path : null);
+  }
+
   function promptCreate(type) {
-    window.NotesModal.prompt(type === 'folder' ? '新資料夾名稱' : '新筆記名稱').then(function (name) {
+    var where = activeParentPath ? activeParentPath.replace(/\//g, ' / ') : '最上層';
+    var message = (type === 'folder' ? '新資料夾名稱' : '新筆記名稱') + '（建立於：' + where + '）';
+    window.NotesModal.prompt(message).then(function (name) {
       if (!name) {
         return;
       }
@@ -655,6 +663,7 @@
     window.NotesTree.init(document.getElementById('tree-root'), {
       onSelect: selectNode,
       onFolderClick: onFolderClicked,
+      onRootClick: onRootClicked,
     });
     window.NotesEditor.init(blockEditorEl, {
       onChange: scheduleSave,
